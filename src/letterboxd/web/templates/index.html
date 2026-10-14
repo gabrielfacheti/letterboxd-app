@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h1 style="margin-top:32px">Estatísticas do seu Letterboxd</h1>
+<p class="sub">Seu histórico por gênero, país, década e direção — e recomendações
+baseadas no que você escolhe assistir, não no que você avalia bem.</p>
+
+<div class="painel">
+  <form method="post" action="/processar" enctype="multipart/form-data">
+    <label>
+      <div class="rotulo" style="margin-bottom:6px">Seu usuário no Letterboxd</div>
+      <input type="text" name="usuario" placeholder="seu_usuario" required
+             pattern="[A-Za-z0-9_]{2,32}" autocomplete="off">
+    </label>
+    <label>
+      <div class="rotulo" style="margin-bottom:6px">Export (.zip) — opcional, mas recomendado</div>
+      <input type="file" name="arquivo" accept=".zip">
+    </label>
+    <details class="passos">
+      <summary>Como baixar o .zip do Letterboxd</summary>
+      <ol>
+        <li>Entre na sua conta em
+          <a href="https://letterboxd.com/" target="_blank" rel="noopener noreferrer">letterboxd.com</a>,
+          pelo navegador.</li>
+        <li>Já logado, abra
+          <a href="https://letterboxd.com/settings/data/" target="_blank" rel="noopener noreferrer">letterboxd.com/settings/data</a>
+          — é a aba <strong>Data</strong> das configurações.</li>
+        <li>Clique em <strong>Export Your Data</strong> e confirme.</li>
+        <li>O download começa na hora: um arquivo
+          <code>letterboxd-seuusuario-…-utc.zip</code>.</li>
+        <li>Envie esse arquivo aqui do jeito que veio, <strong>sem descompactar</strong>.</li>
+      </ol>
+    </details>
+    <button class="acao" type="submit">Analisar</button>
+  </form>
+</div>
+
+<div class="aviso" style="margin-top:14px">
+  Só com o usuário, dá para ler as ~50 entradas mais recentes do seu diário —
+  é o que o feed público oferece. Para o histórico completo, envie o .zip
+  (passo a passo logo abaixo do campo do arquivo).
+  <br><br>
+  O arquivo é lido em memória e descartado: nada dele vai para o disco. O
+  <code>profile.csv</code>, que contém e-mail e nome real, não é sequer aberto.
+  <br><br>
+  O resultado fica num link secreto, que só você recebe. Ninguém mais vê sua
+  página, a menos que você compartilhe o link.
+</div>
+
+<p class="nota-rodape">Dados de filmes por
+  <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a>.
+  Projeto pessoal, sem associação com TMDB ou Letterboxd.</p>
+{% endblock %}

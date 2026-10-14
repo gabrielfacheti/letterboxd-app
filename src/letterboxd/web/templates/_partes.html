@@ -1,0 +1,507 @@
+{# Blocos reutilizados pelas quatro abas. #}
+
+{% set TMDB_IMG = "https://image.tmdb.org/t/p" %}
+
+{# Cartão com cabeçalho: ícone numa caixa com tom do acento, título em negrito
+   (um <h2> de verdade, para o outline e o leitor de tela) e, opcionalmente, um
+   subtítulo e, à direita, o botão de compartilhar (todo cartão tem) e, se o
+   cartão tem gráfico para abrir em tela cheia, o de expandir (`expandir` é a
+   dimensão que ele abre, ou "mapa"). O
+   ícone vem do sprite em base.html; `classe` entra no painel. Usa-se com
+   `{% call %}`: o conteúdo do cartão é o corpo do bloco. #}
+{% macro cartao_secao(titulo, icone, subtitulo='', expandir='', classe='') %}
+<section class="painel secao {{ classe }}">
+  <div class="cabeca-secao">
+    <span class="icone-caixa"><svg class="icone" aria-hidden="true" focusable="false"><use href="#i-{{ icone }}"/></svg></span>
+    <div class="cabeca-texto">
+      <h2>{{ titulo }}</h2>
+      {% if subtitulo %}<div class="legenda">{{ subtitulo }}</div>{% endif %}
+    </div>
+    {# O botão de compartilhar abre o menu único da página (ver perfil.html) e
+       exporta este cartão como imagem. #}
+    <div class="cabeca-extra">
+      {% if expandir %}
+      <button type="button" class="btn btn-icone expandir" data-expandir="{{ expandir }}"
+              aria-haspopup="dialog" aria-label="Expandir {{ titulo }}" title="Expandir">
+        <svg class="icone" aria-hidden="true" focusable="false"><use href="#i-expandir"/></svg>
+      </button>
+      {% endif %}
+      <button type="button" class="btn btn-icone compartilhar" aria-haspopup="menu"
+              aria-expanded="false" aria-controls="menu-compartilhar"
+              aria-label="Compartilhar: {{ titulo }}" title="Compartilhar">
+        <svg class="icone" aria-hidden="true" focusable="false"><use href="#i-compartilhar"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="secao-corpo">{{ caller() }}</div>
+</section>
+{% endmacro %}
+
+{# Cartão de número: rótulo em caixa alta, valor grande, legenda embaixo. #}
+{% macro cartao(rotulo, valor, legenda='', destaque=false) %}
+<div class="painel">
+  <div class="rotulo">{{ rotulo }}</div>
+  <div class="numero{{ ' destaque' if destaque }}">{{ valor }}</div>
+  {% if legenda %}<div class="legenda">{{ legenda }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{# Ranking com posição, barra e percentual. #}
+{# `campo` diz qual chave conta o item: "filmes" nos rankings de filmes,
+   "pessoas" na lista de países de nascimento. #}
+{% macro lista(linhas, mostrar_pct=false, campo='filmes', posicao=true) %}
+  {% if linhas %}
+  {% set maximo = linhas | map(attribute=campo) | max %}
+  <table>
+    {% for linha in linhas %}
+    <tr>
+      {% if posicao %}<td class="pos">{{ loop.index }}</td>{% endif %}
+      {# `detalhe` é a faixa de uma linha (ex. "< 90 min"), menor e em cinza. #}
+      <td class="nome corta">{{ linha.valor }}{% if linha.detalhe %} <span class="detalhe">{{ linha.detalhe }}</span>{% endif %}</td>
+      {# Com porcentagem à vista, a barra tem que medir a mesma coisa: 54% é
+         meia barra, não a barra cheia por ser o primeiro do ranking. #}
+      {% set largura = [linha.pct, 100] | min if mostrar_pct and linha.pct is defined
+                       else 100 * linha[campo] / maximo %}
+      <td><div class="barra"><span style="width:{{ largura | round }}%"></span></div></td>
+      {% if mostrar_pct and linha.pct is defined %}
+        {# Número absoluto primeiro: "54%" sozinho esconde se são 255 filmes
+           ou 5. #}
+        <td class="qtd larga">{{ linha[campo] }} ({{ linha.pct | round | int }}%)</td>
+      {% else %}
+        <td class="qtd">{{ linha[campo] }}</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="sub" style="margin:0">Sem dados suficientes.</p>{% endif %}
+{% endmacro %}
+
+{# Uma linha de filme: pôster, título, ano e nota. Com `detalhes`, também a data
+   assistida e os gêneros (cartões da visão geral); sem, só o essencial (filmes
+   de uma pessoa). Pôster e título levam ao TMDB, como nos cartões de
+   recomendação. Com `comparacao`, o lado direito mostra sua nota, a média do
+   TMDB (rotulada, na escala de 5) e a diferença, em vez da nota sozinha. #}
+{% macro filme_linha(f, detalhes=true, comparacao=false) %}
+  {% set img %}{% if f.poster %}<img loading="lazy" alt="" src="{{ TMDB_IMG }}/w92{{ f.poster }}">{% endif %}{% endset %}
+  {% set url = 'https://www.themoviedb.org/movie/' ~ f.tmdb_id if f.tmdb_id else '' %}
+  <div class="filme">
+    {# O pôster repete o link do título: fora da ordem de tabulação e do leitor
+       de tela, para não anunciar o mesmo destino duas vezes. #}
+    {% if url %}
+    <a class="poster" href="{{ url }}" target="_blank" rel="noopener noreferrer"
+       tabindex="-1" aria-hidden="true">{{ img }}</a>
+    {% else %}<div class="poster">{{ img }}</div>{% endif %}
+    <div class="corpo">
+      <div class="titulo corta">
+        {% if url %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ f.titulo }}</a>
+        {% else %}{{ f.titulo }}{% endif %}
+      </div>
+      <div class="legenda">{{ f.ano or '' }}{% if detalhes and f.data %}{{ ' · ' if f.ano }}{{ f.data.strftime('%d/%m/%Y') }}{% endif %}</div>
+      {% if detalhes and f.generos %}
+      <div class="chips">{% for g in f.generos %}<span class="chip">{{ g }}</span>{% endfor %}</div>
+      {% endif %}
+    </div>
+    {% if comparacao %}
+    <div class="selo-nota comparacao">
+      <span class="amostra">você</span>
+      <span class="badge"><span class="estrela">★</span> {{ ('%.1f' if f.nota * 10 == (f.nota * 10) | round else '%.2f') % f.nota }}</span>
+      <span class="tmdb">tmdb {{ '%.1f' % (f.nota_tmdb / 2) }}</span>
+      <span class="diferenca" style="color:{{ 'var(--acento)' if f.diferenca > 0 else 'var(--link)' }}">{{ '%+.1f' % (f.diferenca / 2) }}</span>
+    </div>
+    {% else %}
+    <div class="selo-nota">
+      {% if f.nota is not none %}
+        <span class="badge"><span class="estrela">★</span> {{ ('%.1f' if f.nota * 10 == (f.nota * 10) | round else '%.2f') % f.nota }}</span>
+        {# Média de várias entradas pode cair entre meias estrelas (4,25), daí a
+           segunda casa; e sem a amostra seria uma nota só disfarçada. #}
+        {% if f.avaliacoes > 1 %}<div class="amostra">média de {{ f.avaliacoes }}</div>{% endif %}
+      {% else %}<span class="amostra">—</span>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{# Cartão com uma lista curta de filmes: pôster, título, data, gêneros e nota. #}
+{% macro cartao_filmes(titulo, subtitulo, filmes, icone) %}
+{% call cartao_secao(titulo, icone, subtitulo) %}
+  {% for f in filmes %}{{ filme_linha(f) }}
+  {% else %}<p class="sub" style="margin:0">Sem dados suficientes.</p>{% endfor %}
+{% endcall %}
+{% endmacro %}
+
+{# Gráfico de colunas; a maior fica em destaque. Cada coluna tem largura mínima
+   (cabe o rótulo); se não couberem no cartão, o gráfico rola na horizontal
+   dentro dele. A dica vem de `data-dica`, pelo popover único da página: dentro
+   do contêiner que rola, uma dica posicionada em CSS seria cortada. #}
+{% macro colunas(linhas, campo_nome, campo_valor='filmes', dimensao='') %}
+  {% if linhas %}
+  {% set maximo = linhas | map(attribute=campo_valor) | max %}
+  {# `--c`: caracteres do maior rótulo; a largura mínima da coluna sai dele. #}
+  <div class="colunas-rolagem" {% if dimensao %}data-dimensao="{{ dimensao }}"{% endif %}><div class="colunas"
+       style="--c:{{ linhas | map(attribute=campo_nome) | map('string') | map('length') | max }}">
+    {% for linha in linhas %}
+    {% set valor = linha[campo_valor] %}
+    {% set legenda = valor ~ ' filme' ~ ('s' if valor != 1 else '') %}
+    <div tabindex="0" aria-label="{{ linha[campo_nome] }}: {{ legenda }}"
+         data-dica="{{ linha[campo_nome] }}|{{ legenda }}"
+         {% if linha.chave is defined %}data-valor="{{ linha.chave }}"{% endif %}>
+      <div class="torre{{ ' pico' if valor == maximo and maximo > 0 }}"
+           style="height:{{ (100 * valor / maximo) | round if maximo else 0 }}%"></div>
+      <div class="eixo">{{ linha[campo_nome] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}<p class="sub" style="margin:0">Sem dados suficientes.</p>{% endif %}
+{% endmacro %}
+
+{# Duração em "18h 44min", ou "7min" abaixo de uma hora. #}
+{% macro duracao(minutos) %}{{ '%dh %02dmin' % (minutos // 60, minutos % 60) if minutos >= 60 else '%dmin' % minutos }}{% endmacro %}
+
+{# Nota média com a amostra ao lado: "4.5" sozinho pode ser uma nota só. #}
+{% macro nota_com_amostra(pessoa) %}
+  {% if pessoa.nota_media is not none %}
+    <span class="estrela">★</span> {{ '%.1f' % pessoa.nota_media }}
+    <span class="amostra sob">{{ pessoa.avaliados }}/{{ pessoa.filmes }} avaliados</span>
+  {% else %}<span class="amostra sob">sem nota</span>{% endif %}
+{% endmacro %}
+
+{# Grade de filmes de uma pessoa, já ordenada do mais antigo ao mais novo. #}
+{% macro filmes_da_pessoa(filmes) %}
+<div class="filmes-pessoa">{% for f in filmes %}{{ filme_linha(f, detalhes=false) }}{% endfor %}</div>
+{% endmacro %}
+
+{% macro retrato(nome, fotos, tamanho='w92', classe='retrato') %}
+  {% if fotos.get(nome) %}
+    <img class="{{ classe }}" loading="lazy" alt="" src="{{ TMDB_IMG }}/{{ tamanho }}{{ fotos[nome] }}">
+  {% else %}<div class="{{ classe }}"></div>{% endif %}
+{% endmacro %}
+
+{# Pizza do gênero dos diretores. Cada fatia é um círculo cujo traço cobre `pct`%
+   do perímetro (`pathLength="100"` faz o traço medir em porcentagem), então a
+   geometria vem pronta de `stats.diversidade_de_genero`. A legenda é o texto
+   que o leitor de tela lê; o desenho em si é decoração. #}
+{% macro pizza(genero, rotulo) %}
+  {% if genero %}
+  <div class="pizza">
+    <svg viewBox="0 0 16 16" role="img" aria-label="{{ rotulo }}: {% for f in genero.fatias %}{{ f.n }} {{ f.nome | lower }}{{ ', ' if not loop.last }}{% endfor %}">
+      <g transform="rotate(-90 8 8)" fill="none" stroke-width="8">
+        {% for f in genero.fatias if f.n %}
+        <circle class="fatia" data-i="{{ f.indice }}" cx="8" cy="8" r="4" pathLength="100"
+                stroke="var(--pizza-{{ f.indice }})"
+                stroke-dasharray="{{ f.pct }} 100" stroke-dashoffset="-{{ f.de }}"/>
+        {% endfor %}
+      </g>
+    </svg>
+    <ul class="legenda-pizza">
+      {% for f in genero.fatias %}
+      <li data-i="{{ f.indice }}">
+        <i style="background:var(--pizza-{{ f.indice }})"></i>
+        <span class="nome">{{ f.nome }}</span>
+        <span class="qtd">{{ f.n }} ({{ f.pct | round | int }}%)</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  <p class="legenda" style="margin:12px 0 0">{{ genero.total }} pessoas, cada uma contada uma vez.</p>
+  {% else %}<p class="sub" style="margin:0">Perfil processado antes deste dado existir.
+    Processe o perfil de novo para ver o gênero.</p>{% endif %}
+{% endmacro %}
+
+{# Linha expansível de uma pessoa: três números rotulados e, ao abrir, os
+   filmes dela. <details> dá teclado e leitor de tela de graça. #}
+{% macro linha_pessoa(pessoa, posicao, fotos) %}
+<details class="pessoa-linha">
+  <summary>
+    <span class="posicao">{{ posicao }}</span>
+    {{ retrato(pessoa.nome, fotos) }}
+    <span class="nome corta">{{ pessoa.nome }}</span>
+    <span class="seta" aria-hidden="true">⌄</span>
+    <span class="numeros">
+      <span class="stat"><span class="rotulo">Filmes</span>
+        <span class="valor">{{ pessoa.filmes }}</span></span>
+      <span class="stat"><span class="rotulo">Assistido</span>
+        <span class="valor">{{ duracao(pessoa.minutos) }}</span></span>
+      <span class="stat"><span class="rotulo">Nota média</span>
+        <span class="valor">{{ nota_com_amostra(pessoa) }}</span></span>
+    </span>
+  </summary>
+  <div class="abre">
+    <div class="legenda" style="margin-bottom:8px">Filmes que você viu de {{ pessoa.nome }}:</div>
+    {{ filmes_da_pessoa(pessoa.lista) }}
+  </div>
+</details>
+{% endmacro %}
+
+{# Cartão de ranking de pessoas: as cinco primeiras e, escondidas, as cinco
+   seguintes. O botão fica sempre por último no cartão, abaixo da quinta linha ou
+   da décima; o script só alterna `hidden` e `aria-expanded`. `id` é único por
+   cartão, para o `aria-controls`. #}
+{% macro ranking_pessoas(pessoas, fotos, id, titulo, icone) %}
+{% call cartao_secao(titulo, icone, classe='ranking-pessoas') %}
+  {% for pessoa in pessoas[:5] %}{{ linha_pessoa(pessoa, loop.index, fotos) }}
+  {% else %}<p class="sub" style="margin:8px">Sem dados suficientes.</p>{% endfor %}
+  {% if pessoas | length > 5 %}
+  <div id="{{ id }}" hidden>
+    {% for pessoa in pessoas[5:] %}{{ linha_pessoa(pessoa, loop.index + 5, fotos) }}{% endfor %}
+  </div>
+  <button type="button" class="ver-mais" aria-expanded="false" aria-controls="{{ id }}">
+    <span class="fechado">Mostrar mais {{ pessoas | length - 5 }}</span>
+    <span class="aberto">Mostrar menos</span>
+  </button>
+  {% endif %}
+{% endcall %}
+{% endmacro %}
+
+{# Sub-aba de pessoas (direção ou elenco): dois rankings expansíveis, o mesmo
+   tratamento para os dois. A direção ainda traz, no fim, a pizza de gênero e
+   os países de nascimento. #}
+{% macro aba_pessoas(d, fotos) %}
+  {% set t = {
+    'direcao': {'mais': 'Direção mais assistida', 'melhores': 'Direção melhor avaliada'},
+    'elenco': {'mais': 'Elenco mais frequente', 'melhores': 'Elenco melhor avaliado'},
+  }[d.papel] %}
+
+  {{ ranking_pessoas(d.mais, fotos, d.papel ~ '-mais', t.mais, 'usuario') }}
+  {{ ranking_pessoas(d.melhores, fotos, d.papel ~ '-melhores', t.melhores, 'estrela') }}
+
+  {% if d.papel == 'direcao' %}
+  <div class="duas iguais">
+    {% call cartao_secao('Gênero da direção', 'pizza') %}{{ pizza(d.genero, 'Gênero da direção') }}{% endcall %}
+    {% call cartao_secao('Países de nascimento · direção', 'pino') %}
+        {% if d.paises and d.paises.total %}
+        <p class="legenda" style="margin:0 0 12px">Todos os diretores dos seus filmes.
+          Porcentagem sobre quem tem país conhecido.</p>
+        {{ lista(d.paises.linhas, mostrar_pct=true, campo='pessoas') }}
+        <p class="legenda" style="margin:12px 0 0">
+          {{ d.paises.sem_local }} de {{ d.paises.total }} sem local de nascimento conhecido.</p>
+        {% elif d.paises %}<p class="sub" style="margin:0">Sem dados suficientes.</p>
+        {% else %}<p class="sub" style="margin:0">Perfil processado antes deste dado existir.
+          Processe o perfil de novo para ver os países.</p>{% endif %}
+    {% endcall %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{# Mapa-múndi pintado pela quantidade de filmes. A intensidade vem pronta de
+   `mapa.montar` e entra como variável CSS, para o hover poder sobrescrevê-la. #}
+{% macro mapa_svg(mapa) %}
+  {% if mapa.maximo %}
+  <div class="mapa">
+    <svg viewBox="0 0 {{ mapa.largura }} {{ mapa.altura }}" width="100%" role="img"
+         aria-hidden="true">
+      {% for pais in mapa.paises %}
+      <path d="{{ pais.d }}" data-nome="{{ pais.nome }}" data-filmes="{{ pais.filmes }}"
+            {% if pais.iso %}data-iso="{{ pais.iso }}"{% endif %}
+            {% if pais.filmes %}class="com" style="--i:{{ pais.intensidade }}"{% endif %}/>
+      {% endfor %}
+    </svg>
+    <div class="mapa-dica" aria-hidden="true"></div>
+  </div>
+  {# Sem a lista de países ao lado, o mapa é a única fonte desses números;
+     leitor de tela não enxerga cor nem dica de hover. #}
+  <ul class="so-leitor">
+    {% for pais in mapa.paises | selectattr('filmes') | sort(attribute='filmes', reverse=true) %}
+    <li>{{ pais.nome }}: {{ pais.filmes }} filme{{ 's' if pais.filmes != 1 }}</li>
+    {% endfor %}
+  </ul>
+  <div class="mapa-legenda">
+    <span>1</span><span class="gradiente"></span><span>{{ mapa.maximo }} filmes</span>
+    <span class="amostra">escala logarítmica</span>
+  </div>
+  {% if mapa.fora %}
+  <p class="legenda" style="margin:8px 0 0">
+    Sem contorno próprio neste mapa (países extintos, regiões e territórios
+    pequenos demais para a escala):
+    {% for nome, filmes in mapa.fora %}{{ nome }} ({{ filmes }}){{ ', ' if not loop.last }}{% endfor %}.
+  </p>
+  {% endif %}
+  {% else %}<p class="sub" style="margin:0">Nenhum país de produção conhecido.</p>{% endif %}
+{% endmacro %}
+
+{# Painel "Cinema pelo mundo", ao lado do mapa em tela cheia. Os dados vêm de
+   `mapa.painel`; os países explorados são os mesmos do cartão da visão geral. #}
+{% macro painel_cinema(c) %}
+<aside class="painel cinema">
+  <h3>Cinema pelo mundo</h3>
+  <div class="legenda">De onde vêm os seus filmes</div>
+  <div class="cinema-destaque">
+    <div><span class="rotulo">Países explorados</span>
+         <span class="valor acento">{{ c.paises }}</span></div>
+    <div><span class="rotulo">Explorador</span>
+         <span class="valor">{{ c.rotulo }}</span>
+         <span class="legenda">{{ c.frase }}</span></div>
+    <div><span class="rotulo">País mais visto</span>
+         <span class="valor">{{ c.mais_visto or '—' }}</span></div>
+  </div>
+  {% if c.top %}
+  {# Cada linha é um botão: escolhe o país no mapa em tela cheia. É o único
+     caminho para países sem contorno (Hong Kong, União Soviética) e o do
+     teclado, já que os contornos não recebem foco. #}
+  <div class="paises-lista">
+    {% for pais in c.top %}
+    <button type="button" class="pais-linha" data-iso="{{ pais.iso }}" data-nome="{{ pais.nome }}"
+            aria-pressed="false">
+      <span class="iso">{{ pais.iso }}</span>
+      <span class="nome corta">{{ pais.nome }}</span>
+      {# A barra mede a porcentagem, como nas outras listas. #}
+      <span class="barra"><span style="width:{{ pais.pct }}%"></span></span>
+      <span class="qtd">{{ pais.filmes }} ({{ pais.pct }}%)</span>
+    </button>
+    {% endfor %}
+  </div>
+  {% if c.restantes %}<p class="legenda" style="margin:10px 0 0">+{{ c.restantes }} países</p>{% endif %}
+  {% endif %}
+</aside>
+{% endmacro %}
+
+{# Caixinha de número, no estilo do painel "Cinema pelo mundo": rótulo em caixa
+   alta, valor grande e uma legenda. Com `url`, o valor (um título) leva ao TMDB. #}
+{% macro mini(rotulo, valor, legenda='', url='', tamanho='') %}
+<div class="mini-stat">
+  <span class="rotulo">{{ rotulo }}</span>
+  <span class="valor corta {{ tamanho }}">{% if url %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ valor }}</a>{% else %}{{ valor }}{% endif %}</span>
+  {% if legenda %}<span class="legenda">{{ legenda }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+{# Duas caixinhas no topo de um cartão: quantos valores distintos e o menos
+   frequente (com a contagem de entradas, a amostra). #}
+{% macro resumo_de_ranking(r, rotulo_total) %}
+<div class="mini-stats centro">
+  {{ mini(rotulo_total, r.total, tamanho='grande') }}
+  {{ mini('Menos assistido', r.menos or '—',
+          (r.entradas ~ ' entrada' ~ ('s' if r.entradas != 1 else '')) if r.menos else '') }}
+</div>
+{% endmacro %}
+
+{# "Popular ou garimpo?": pontuação de fama pelos votos no TMDB, o perfil e a
+   trilha de obscuro a popular, e os achados (filmes que você curtiu e quase
+   ninguém conhece). #}
+{% macro popular_ou_garimpo(f) %}
+  {% if f %}
+  <div class="fama-topo">
+    <span class="numero destaque">{{ f.pontuacao }}%</span>
+    <div><strong>{{ f.rotulo }}</strong><div class="legenda">{{ f.frase }}</div></div>
+  </div>
+  <div class="fama-trilha" role="img" aria-label="Pontuação {{ f.pontuacao }} de 100, de obscuro a popular">
+    <span class="fama-marcador" style="left:{{ f.pontuacao }}%"></span>
+  </div>
+  <div class="fama-extremos"><span>Obscuro</span><span>Popular</span></div>
+  <p class="legenda" style="margin:12px 0 0">Pelo número de votos no TMDB de cada um
+    dos {{ f.filmes }} filmes distintos.</p>
+  {% if f.achados %}
+  <div class="rotulo" style="margin:16px 0 4px">Seus achados</div>
+  <div class="legenda" style="margin-bottom:6px">Filmes que você avaliou com 4,0 ou mais e que quase
+    ninguém no TMDB votou.</div>
+  {% for filme in f.achados %}{{ filme_linha(filme, detalhes=false) }}{% endfor %}
+  {% endif %}
+  {% else %}<p class="sub" style="margin:0">Sem filmes com metadados suficientes.</p>{% endif %}
+{% endmacro %}
+
+{# "Duração dos filmes": média, quatro faixas e o mais curto e o mais longo. #}
+{% macro duracao_dos_filmes(d) %}
+  {% if d %}
+  <div class="mini-stats">
+    {{ mini('Duração média', duracao(d.duracao_media), 'de ' ~ d.duracao_amostra ~ ' filmes') }}
+  </div>
+  {{ lista(d.faixas, mostrar_pct=true, posicao=false) }}
+  <div class="mini-stats" style="margin:14px 0 0">
+    {% for rotulo, f in [('Mais curto', d.curto), ('Mais longo', d.longo)] %}
+    {{ mini(rotulo, f.titulo, duracao(f.duracao) ~ (' · ' ~ f.ano if f.ano else ''),
+            'https://www.themoviedb.org/movie/' ~ f.tmdb_id, tamanho='pequeno') }}
+    {% endfor %}
+  </div>
+  {% else %}<p class="sub" style="margin:0">Sem duração conhecida.</p>{% endif %}
+{% endmacro %}
+
+{# "Revisitas": filmes com 2+ sessões. Estatísticas, o filme mais revisto com a
+   linha do tempo das sessões, os gêneros dos revistos numa barra só e a grade de
+   todos (os 6 primeiros à vista, o resto atrás do botão). #}
+{% macro revisitas(r, fotos) %}
+  {% if r.filmes %}
+  {% set d = r.destaque %}
+  <div class="mini-stats centro">
+    {{ mini('Filmes revistos', r.filmes, tamanho='grande') }}
+    {{ mini('Diretores revistos', r.diretores, tamanho='grande') }}
+    {{ mini('Tempo revendo', duracao(r.minutos), tamanho='grande') }}
+  </div>
+
+  <div class="rev-destaques">
+  <div class="rev-destaque">
+    {% set url = 'https://www.themoviedb.org/movie/' ~ d.tmdb_id %}
+    <a class="rev-poster" href="{{ url }}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true">
+      {% if d.poster %}<img loading="lazy" alt="" src="{{ TMDB_IMG }}/w185{{ d.poster }}">{% endif %}
+    </a>
+    <div class="rev-info">
+      <span class="rotulo">Mais revisto</span>
+      <div class="rev-titulo corta"><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ d.titulo }}</a></div>
+      <div class="legenda">{{ d.ano or '' }}{{ ' · ' if d.ano }}{{ d.sessoes }} sessões</div>
+      {# Média com a amostra: só parte das sessões costuma ter nota. #}
+      <div class="rev-media">
+        {% if d.nota_media is not none %}<span class="estrela">★</span> {{ '%.2f' % d.nota_media }}
+        <span class="amostra">{{ d.avaliadas }}/{{ d.sessoes }} avaliadas</span>
+        {% else %}<span class="amostra">sem nota</span>{% endif %}
+      </div>
+      <ol class="linha-do-tempo">
+        {% for sessao in d.linha_do_tempo %}
+        <li>
+          <span class="amostra">{{ sessao.data.strftime('%d/%m/%Y') if sessao.data else 'sem data' }}</span>
+          <span class="rev-nota">{% if sessao.nota is not none %}<span class="estrela">★</span> {{ ('%.1f' if sessao.nota * 10 == (sessao.nota * 10) | round else '%.2f') % sessao.nota }}{% else %}—{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+  </div>
+
+  {% if r.diretor %}
+  <div class="rev-destaque rev-diretor">
+    {{ retrato(r.diretor.nome, fotos, 'w185', 'rev-foto') }}
+    <div class="rev-info">
+      <span class="rotulo">Diretor mais revisto</span>
+      <div class="rev-titulo corta">{{ r.diretor.nome }}</div>
+      <div class="legenda">{{ r.diretor.filmes }} filme{{ 's' if r.diretor.filmes != 1 }} revisto{{ 's' if r.diretor.filmes != 1 }}</div>
+      <ul class="rev-titulos">
+        {% for t in r.diretor.titulos %}
+        <li class="corta"><a href="https://www.themoviedb.org/movie/{{ t.tmdb_id }}" target="_blank" rel="noopener noreferrer">{{ t.titulo }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+  </div>
+
+  <div class="rotulo" style="margin:18px 0 8px">Gêneros dos revistos</div>
+  <div class="rev-barra" role="img"
+       aria-label="Gêneros dos filmes revistos: {% for g in r.generos %}{{ g.nome }} {{ g.n }}{{ ', ' if not loop.last }}{% endfor %}">
+    {% for g in r.generos %}<span style="width:{{ g.pct }}%; background:var(--rev-{{ 'outros' if g.nome == 'Outros' else loop.index0 }})"></span>{% endfor %}
+  </div>
+  <ul class="rev-legenda">
+    {% for g in r.generos %}
+    <li><i style="background:var(--rev-{{ 'outros' if g.nome == 'Outros' else loop.index0 }})"></i>{{ g.nome }} <b>{{ g.n }}</b></li>
+    {% endfor %}
+  </ul>
+
+  <div class="rotulo" style="margin:18px 0 8px">Todos os revistos</div>
+  {% macro rev_grade(filmes) %}
+    {% for f in filmes %}
+    {% set url = 'https://www.themoviedb.org/movie/' ~ f.tmdb_id %}
+    <div class="rev-item">
+      <a class="rev-poster" href="{{ url }}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true">
+        {% if f.poster %}<img loading="lazy" alt="" src="{{ TMDB_IMG }}/w185{{ f.poster }}">{% endif %}
+        <span class="rev-x">×{{ f.sessoes }}</span>
+      </a>
+      <div class="titulo corta"><a href="{{ url }}" target="_blank" rel="noopener noreferrer"
+        aria-label="{{ f.titulo }}, {{ f.sessoes }} sessões">{{ f.titulo }}</a></div>
+    </div>
+    {% endfor %}
+  {% endmacro %}
+  <div class="rev-grade">{{ rev_grade(r.lista[:6]) }}</div>
+  {% if r.lista | length > 6 %}
+  <div class="rev-grade rev-mais" id="rev-mais" hidden>{{ rev_grade(r.lista[6:]) }}</div>
+  <button type="button" class="ver-mais" aria-expanded="false" aria-controls="rev-mais">
+    <span class="fechado">Mostrar todos ({{ r.lista | length }})</span>
+    <span class="aberto">Mostrar menos</span>
+  </button>
+  {% endif %}
+  {% else %}<p class="sub" style="margin:0">Nenhum filme revisto ainda.</p>{% endif %}
+{% endmacro %}

@@ -1,0 +1,37 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Segredos — nunca versionar
+.env
+*.env
+!.env.example
+
+# Dados locais (cache do TMDB, uploads)
+*.sqlite
+*.sqlite3
+*.zip
+# data/ existe no clone (o compose monta ele), mas nada dentro é versionado:
+# nem os -wal/-shm do SQLite, nem o export de ninguém.
+data/*
+!data/.gitkeep
+
+# Artefatos gerados pelo graphify
+graphify-out/
+
+# Configuração local do Claude Code (a de projeto, .claude/settings.json, é versionada)
+.claude/settings.local.json
+
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+.playwright/
+# Ferramenta local de quem desenvolve, fora do repositório
+.claude/skills/playwright-cli/
+test-results/

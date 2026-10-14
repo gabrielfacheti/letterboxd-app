@@ -1,0 +1,8 @@
+html-to-image 1.11.11 (MIT, ver LICENSE-html-to-image)
+Origem: https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js
+sha256: 0181b9a4ea3351540751b2e72b6baecb5c2297093fcb0bd2af94fc531cb0fbda
+
+Arquivo UMD minificado, copiado sem alteração (baixado uma vez para cá; o site
+não busca nada de terceiros). É carregado só quando alguém exporta um cartão
+como imagem. Para atualizar: baixar a nova versão, conferir que expõe
+`htmlToImage.toBlob`, trocar o arquivo e o sha256 acima.

@@ -1,0 +1,976 @@
+{% extends "base.html" %}
+{% import "_partes.html" as p %}
+{% block titulo %}{{ username }} — letterboxd stats{% endblock %}
+
+{% block abas %}
+<div class="abas" role="tablist">
+  <button role="tab" data-aba="overview" aria-selected="true">Overview</button>
+  <button role="tab" data-aba="deepdive" aria-selected="false">Deepdive</button>
+  <button role="tab" data-aba="people" aria-selected="false">People</button>
+  <button role="tab" data-aba="recommendations" aria-selected="false">Recommendations</button>
+</div>
+{% endblock %}
+
+{% block conteudo %}
+<h1 style="margin-top:24px">{{ username }}</h1>
+<p class="sub">{{ resumo.entradas }} entradas · atualizado em {{ atualizado.strftime('%d/%m/%Y') }}</p>
+<div class="aviso" style="margin-bottom:20px">
+  <strong>Guarde o endereço desta página</strong> — é o único jeito de voltar a
+  ela. Quem tiver o link vê suas estatísticas; sem ele, ninguém encontra.
+</div>
+
+{# ================================================================ 1 #}
+<section role="tabpanel" id="aba-overview">
+  <div class="grade">
+    {{ p.cartao('Filmes vistos', '{:,}'.format(resumo.filmes_unicos).replace(',', '.'),
+                'desde ' ~ resumo.primeiro_registro.year if resumo.primeiro_registro else '') }}
+    {{ p.cartao('Em ' ~ resumo.ano_corrente, resumo.no_ano, 'com data registrada') }}
+    {{ p.cartao('Horas assistidas', resumo.dias ~ ' dias',
+                '{:,}'.format(resumo.horas | round | int).replace(',', '.') ~ ' horas') }}
+    {{ p.cartao('Nota média', resumo.nota_media or '—', 'de 5,0', destaque=true) }}
+  </div>
+
+  <div class="grade" style="margin-top:12px">
+    {{ p.cartao('Reviews escritas', resumo.com_review) }}
+    {{ p.cartao('Países diferentes', resumo.paises_distintos, destaque=true) }}
+  </div>
+
+  <div class="grade" style="margin-top:12px">
+    {{ p.cartao('Filmes por semana', resumo.por_semana if resumo.por_semana is not none else '—',
+                'nas ' ~ resumo.com_data ~ ' entradas com data') }}
+    {{ p.cartao('Dia mais ativo', resumo.dia_mais_ativo | capitalize if resumo.dia_mais_ativo else '—',
+                resumo.dia_mais_ativo_entradas ~ ' entradas com data' if resumo.dia_mais_ativo else '') }}
+    {{ p.cartao('Filmes diferentes',
+                resumo.pct_filmes_diferentes ~ '%' if resumo.pct_filmes_diferentes is not none else '—',
+                resumo.filmes_unicos ~ ' de ' ~ resumo.entradas ~ ' entradas') }}
+    {{ p.cartao('Duração média',
+                ('%dh %02dmin' % (resumo.duracao_media // 60, resumo.duracao_media % 60))
+                  if resumo.duracao_media else '—',
+                'de ' ~ resumo.duracao_amostra ~ ' filmes') }}
+  </div>
+
+  {% call p.cartao_secao('Distribuição de notas', 'estrela', expandir='nota') %}
+    {% set escala = [] %}
+    {% for linha in notas %}{% set _ = escala.append({'nome': ('%g' % linha.nota), 'filmes': linha.filmes, 'chave': ('%g' % linha.nota)}) %}{% endfor %}
+    {{ p.colunas(escala, 'nome', dimensao='nota') }}
+  {% endcall %}
+
+  {# Os três gráficos de atividade são temporais: só as entradas com data. O
+     aviso vale para os três e fica onde eles começam. #}
+  <div class="aviso" style="margin-top:20px">
+    Os três gráficos de atividade usam as <strong>{{ resumo.com_data }}</strong>
+    entradas com data registrada, ou {{ resumo.cobertura_temporal }}% do total.
+    Filmes marcados como vistos sem entrada no diário ficam de fora deles — e
+    continuam contando em todo o resto.
+  </div>
+
+  {% call p.cartao_secao('Atividade anual', 'calendario', expandir='ano') %}{{ p.colunas(anual, 'nome', dimensao='ano') }}{% endcall %}
+  {% call p.cartao_secao('Atividade mensal · ' ~ resumo.ano_corrente, 'calendario', expandir='mes') %}{{ p.colunas(atividade, 'nome', dimensao='mes') }}{% endcall %}
+  {% call p.cartao_secao('Atividade por dia da semana', 'relogio', expandir='dia') %}{{ p.colunas(semanal, 'nome', dimensao='dia') }}{% endcall %}
+
+  <div class="duas">
+    {{ p.cartao_filmes('Assistidos recentemente', 'As 5 últimas entradas com data', recentes, 'olho') }}
+    {{ p.cartao_filmes('Mais bem avaliados', 'Top 5 pela sua nota; rewatches pela média', melhores_filmes, 'estrela') }}
+  </div>
+</section>
+
+{# ================================================================ 2 #}
+<section role="tabpanel" id="aba-deepdive" hidden>
+  {% call p.cartao_secao('Filmes por década', 'barras', expandir='decada') %}
+    {% set decs = [] %}
+    {% for linha in decadas %}{% set _ = decs.append({'nome': (linha.valor ~ 's'), 'filmes': linha.filmes, 'chave': linha.valor}) %}{% endfor %}
+    {{ p.colunas(decs, 'nome', dimensao='decada') }}
+  {% endcall %}
+
+  <div class="duas">
+    {% call p.cartao_secao('Gêneros favoritos', 'etiqueta', expandir='genero') %}
+      {{ p.resumo_de_ranking(generos_resumo, 'Gêneros explorados') }}
+      {{ p.lista(generos, mostrar_pct=true) }}
+    {% endcall %}
+    {% call p.cartao_secao('Idiomas originais', 'balao', expandir='idioma') %}
+      {{ p.resumo_de_ranking(idiomas_resumo, 'Idiomas explorados') }}
+      {{ p.lista(idiomas, mostrar_pct=true) }}
+    {% endcall %}
+  </div>
+
+  {% call p.cartao_secao('Mapa dos países', 'globo', expandir='mapa' if mapa.maximo else '') %}{{ p.mapa_svg(mapa) }}{% endcall %}
+
+  <div class="duas iguais">
+    {% call p.cartao_secao('Popular ou garimpo?', 'bussola') %}{{ p.popular_ou_garimpo(fama) }}{% endcall %}
+    {% call p.cartao_secao('Duração dos filmes', 'relogio', expandir='duracao') %}{{ p.duracao_dos_filmes(duracao) }}{% endcall %}
+  </div>
+
+  {% call p.cartao_secao('Revisitas', 'repetir', 'Os filmes aos quais você volta') %}{{ p.revisitas(revisitas, fotos) }}{% endcall %}
+
+  {% call p.cartao_secao('Temas recorrentes', 'hashtag', expandir='tema') %}{{ p.lista(keywords) }}{% endcall %}
+
+  {% call p.cartao_secao('Onde você discorda do público', 'setas') %}
+    <p class="legenda" style="margin:0 0 12px">
+      Sua nota contra a média do TMDB, na mesma escala de 5. Só filmes com pelo
+      menos 50 votos — sem esse corte, um filme que ninguém avaliou fabricaria a
+      maior discordância possível.
+    </p>
+    {% if discordancias %}
+    {% for linha in discordancias %}{{ p.filme_linha(linha, detalhes=false, comparacao=true) }}{% endfor %}
+    {% else %}<p class="sub" style="margin:0">Sem filmes avaliados suficientes.</p>{% endif %}
+  {% endcall %}
+</section>
+
+{# ================================================================ 3 #}
+<section role="tabpanel" id="aba-people" hidden>
+  <div class="subabas" role="tablist">
+    <button role="tab" id="sub-direcao-aba" data-sub="direcao" aria-controls="sub-direcao" aria-selected="true">Diretores</button>
+    <button role="tab" id="sub-elenco-aba" data-sub="elenco" aria-controls="sub-elenco" aria-selected="false">Elenco</button>
+  </div>
+
+  <div role="tabpanel" id="sub-direcao" aria-labelledby="sub-direcao-aba">
+    {{ p.aba_pessoas(pessoas.direcao, fotos) }}
+  </div>
+  <div role="tabpanel" id="sub-elenco" aria-labelledby="sub-elenco-aba" hidden>
+    {{ p.aba_pessoas(pessoas.elenco, fotos) }}
+  </div>
+
+  <p class="nota-rodape">
+    Todo ranking exige no mínimo 3 filmes, e os de nota exigem 3 avaliações —
+    uma nota só não é média. O número menor sob cada nota diz quantos daqueles
+    filmes você avaliou. Horas contam as revisões; filmes, não.
+  </p>
+</section>
+
+{# ================================================================ 4 #}
+<section role="tabpanel" id="aba-recommendations" hidden>
+  <div id="rec-conteudo" style="margin-top:20px"><p class="sub">Carregando…</p></div>
+</section>
+
+{# Mapa em tela cheia. O SVG não é repetido aqui: o script clona o do cartão
+   ao abrir, para os 52 KB de contornos irem uma vez só no HTML. #}
+{% if mapa.maximo %}
+<dialog id="dialogo-mapa" aria-labelledby="dialogo-mapa-titulo">
+  <div class="dialogo">
+    <div class="dialogo-topo">
+      <h2 id="dialogo-mapa-titulo">Mapa dos países</h2>
+      <button type="button" class="btn" id="fechar-mapa">Fechar</button>
+    </div>
+    <div class="dialogo-corpo">
+      <div>
+        <div class="zoom-botoes" role="group" aria-label="Zoom do mapa">
+          <button type="button" class="btn" data-zoom="mais" aria-label="Aproximar">+</button>
+          <button type="button" class="btn" data-zoom="menos" aria-label="Afastar">−</button>
+          <button type="button" class="btn" data-zoom="zero">Reiniciar</button>
+        </div>
+        <div class="painel">
+          <div class="mapa mapa-zoom" id="mapa-grande"><div class="mapa-dica" aria-hidden="true"></div></div>
+          <div id="mapa-grande-legenda"></div>
+        </div>
+        {# Filmes do país escolhido. O título é anunciado (aria-live) e recebe o
+           foco quando a escolha vem do teclado. #}
+        <section class="pais-filmes" aria-labelledby="pais-titulo">
+          <div class="pais-cabeca">
+            <h3 id="pais-titulo" tabindex="-1" aria-live="polite">Filmes por país</h3>
+            <button type="button" class="btn" id="limpar-pais" hidden>Limpar</button>
+          </div>
+          <div id="pais-conteudo"></div>
+        </section>
+      </div>
+      {{ p.painel_cinema(cinema) }}
+    </div>
+  </div>
+</dialog>
+{% endif %}
+
+{# Gráficos em tela cheia, um diálogo só para todos os cartões que se expandem.
+   Sem botão de compartilhar aqui. #}
+<dialog id="dialogo-grafico" aria-labelledby="dg-titulo">
+  <div class="dialogo">
+    <div class="dialogo-topo">
+      <div class="dg-cabeca"><span id="dg-icone"></span><h2 id="dg-titulo"></h2></div>
+      <button type="button" class="btn" id="fechar-grafico">Fechar</button>
+    </div>
+    <div class="dialogo-corpo coluna">
+      <div class="painel" id="dg-grafico"></div>
+      <section class="pais-filmes" aria-labelledby="dg-selecao-titulo">
+        <div class="pais-cabeca">
+          <h3 id="dg-selecao-titulo" tabindex="-1" aria-live="polite"></h3>
+          <button type="button" class="btn" id="dg-limpar" hidden>Limpar</button>
+        </div>
+        <div id="dg-conteudo"></div>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<div class="dica-corta" id="dica-corta" popover="manual" aria-hidden="true"></div>
+
+{# Menu de exportar cartão, único na página: o script o posiciona junto ao botão
+   que o abriu. Esc e clique fora fecham (popover). Instagram não tem API para
+   publicar daqui: no celular, "Compartilhar…" abre o menu do sistema, onde ele
+   aparece; no desktop restam baixar e copiar. #}
+<div class="menu-compartilhar" id="menu-compartilhar" popover="auto">
+  <div role="menu" aria-label="Compartilhar cartão como imagem">
+    <button type="button" role="menuitem" data-acao="baixar">Baixar PNG</button>
+    <button type="button" role="menuitem" data-acao="copiar">Copiar imagem</button>
+    <button type="button" role="menuitem" data-acao="compartilhar" hidden>Compartilhar…</button>
+  </div>
+  <div class="legenda" id="menu-compartilhar-dica" hidden>Abre o menu do sistema (no celular, inclui o Instagram).</div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  const slug = {{ slug | tojson }};
+
+  // Dica do mapa: segue o cursor, então precisa de JS. São 176 contornos; uma
+  // escuta só no <svg> em vez de uma por país.
+  document.querySelectorAll('.mapa').forEach(mapa => {
+    const dica = mapa.querySelector('.mapa-dica');
+    mapa.addEventListener('mousemove', e => {
+      const alvo = e.target.closest('path');
+      if (!alvo) { dica.classList.remove('visivel'); return; }
+      const n = Number(alvo.dataset.filmes);
+      dica.innerHTML = '';
+      dica.append(alvo.dataset.nome);
+      const b = document.createElement('b');
+      b.textContent = n ? `${n} filme${n === 1 ? '' : 's'}` : 'nenhum filme';
+      dica.append(b);
+      const caixa = mapa.getBoundingClientRect();
+      const x = e.clientX - caixa.left, y = e.clientY - caixa.top;
+      // Perto da borda direita a dica vira para a esquerda do cursor.
+      dica.style.left = (x > caixa.width - 140 ? x - dica.offsetWidth - 12 : x + 12) + 'px';
+      dica.style.top = (y - 12) + 'px';
+      dica.classList.add('visivel');
+    });
+    mapa.addEventListener('mouseleave', () => dica.classList.remove('visivel'));
+  });
+
+  // Dica flutuante: um elemento e uma escuta para a página toda, em vez de uma
+  // dica por elemento. Serve a dois casos: texto cortado (`.corta`, só aparece se
+  // está de fato cortado) e coluna de gráfico (`data-dica="nome|valor"`). É um
+  // popover, para ficar acima do <dialog> do mapa e sem ser cortado pela rolagem
+  // horizontal do gráfico.
+  const dicaCorta = document.getElementById('dica-corta');
+  let alvoDica = null;
+  function esconderDica() {
+    if (!alvoDica) return;
+    alvoDica = null;
+    dicaCorta.classList.remove('visivel');
+    dicaCorta.hidePopover();
+  }
+  function posicionarDica() {
+    const el = alvoDica, r = el.getBoundingClientRect(), d = dicaCorta.getBoundingClientRect();
+    const acima = r.top - d.height - 6;
+    // Coluna: dica centrada nela. Texto cortado: alinhada ao começo do texto.
+    const esquerda = el.dataset.dica ? r.left + r.width / 2 - d.width / 2 : r.left;
+    dicaCorta.style.left = Math.min(Math.max(8, esquerda), innerWidth - d.width - 8) + 'px';
+    dicaCorta.style.top = (acima >= 8 ? acima : r.bottom + 6) + 'px';
+  }
+  function mostrarDica(el) {
+    if (el === alvoDica) return;
+    esconderDica();
+    if (!el.dataset.dica && el.scrollWidth <= el.clientWidth) return;
+    alvoDica = el;
+    if (el.dataset.dica) {
+      const [nome, valor] = el.dataset.dica.split('|');
+      const destaque = document.createElement('b');
+      destaque.textContent = valor;
+      dicaCorta.replaceChildren(nome, destaque);
+    } else dicaCorta.textContent = el.textContent.trim();
+    // Posição zerada antes de medir: senão a largura sai limitada pelo que
+    // sobrava à direita da posição anterior.
+    dicaCorta.style.left = dicaCorta.style.top = '0px';
+    dicaCorta.showPopover();
+    posicionarDica();
+    dicaCorta.classList.add('visivel');
+  }
+  // No toque não há `mouseout`: o navegador emula `mouseover` no toque e a dica
+  // ficava presa. Por isso, no toque, a dica sai do clique: toque num gráfico de
+  // cartão ou num texto cortado a mostra, e ela some no próximo toque, ao rolar
+  // ou em 3 s; tocar de novo no mesmo alvo a esconde. No diálogo, tocar escolhe
+  // (o título mostra o valor), então não há dica. Com o mouse, vale o hover.
+  let toque = false, alvoAntesDoToque = null, temporizadorDoToque = 0;
+  document.addEventListener('pointerdown', e => {
+    toque = e.pointerType === 'touch';
+    alvoAntesDoToque = alvoDica;
+    if (toque) esconderDica();
+  }, true);
+  document.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') toque = false; });
+  document.addEventListener('mouseover', e => {
+    if (toque) return;
+    const el = e.target.closest('.corta, [data-dica]');
+    el ? mostrarDica(el) : esconderDica();
+  });
+  document.addEventListener('mouseout', e => { if (!e.relatedTarget) esconderDica(); });
+  document.addEventListener('click', e => {
+    esconderDica();
+    clearTimeout(temporizadorDoToque);
+    if (!toque || e.target.closest('dialog')) return;
+    const el = e.target.closest('.corta, [data-dica]');
+    if (!el || el === alvoAntesDoToque) return;
+    mostrarDica(el);
+    temporizadorDoToque = setTimeout(esconderDica, 3000);
+  });
+  // Foco de teclado no próprio texto (o link do título), na coluna ou na linha
+  // que contém o texto. Foco vindo de clique ou toque não conta.
+  document.addEventListener('focusin', e => {
+    if (!e.target.matches(':focus-visible')) return;
+    const el = e.target.closest('.corta, [data-dica]') || e.target.querySelector('.corta');
+    el ? mostrarDica(el) : esconderDica();
+  });
+  document.addEventListener('focusout', esconderDica);
+  // Rolar (a página, ou o gráfico por foco de teclado) move o alvo: a dica o
+  // acompanha enquanto ele estiver à vista, senão some.
+  document.addEventListener('scroll', () => {
+    if (!alvoDica) return;
+    if (toque) return esconderDica();
+    const r = alvoDica.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) esconderDica();
+    else posicionarDica();
+  }, true);
+
+  // "Mostrar mais/menos" dos rankings de pessoas: o botão fica no fim do cartão
+  // e só alterna a lista escondida.
+  document.addEventListener('click', e => {
+    const botao = e.target.closest('.ver-mais');
+    if (!botao) return;
+    const abrir = botao.getAttribute('aria-expanded') !== 'true';
+    botao.setAttribute('aria-expanded', abrir);
+    document.getElementById(botao.getAttribute('aria-controls')).hidden = !abrir;
+  });
+
+  // ---- exportar cartão: início ----
+  // Cada cartão vira imagem (baixar, copiar ou o menu de compartilhar do
+  // sistema). Nada aqui usa o endereço do perfil: a imagem e o nome do arquivo
+  // levam só o nome de usuário, que é público.
+  const usuario = {{ username | tojson }};
+  const menu = document.getElementById('menu-compartilhar');
+  const toast = document.getElementById('toast');
+  const itemCompartilhar = menu.querySelector('[data-acao=compartilhar]');
+  let botaoDoMenu = null, imagemPronta = null, tituloDoCartao = '', avisoTimer = 0, fechouEm = 0;
+
+  // "Compartilhar…" só existe onde o navegador compartilha arquivos (celular,
+  // em geral). Não há API para publicar no Instagram daqui; é o menu do sistema.
+  const podeCompartilhar = !!(navigator.canShare &&
+    navigator.canShare({files: [new File([''], 'a.png', {type: 'image/png'})]}));
+  itemCompartilhar.hidden = !podeCompartilhar;
+  document.getElementById('menu-compartilhar-dica').hidden = !podeCompartilhar;
+
+  function avisar(texto) {
+    toast.textContent = texto;
+    toast.classList.add('visivel');
+    clearTimeout(avisoTimer);
+    avisoTimer = setTimeout(() => toast.classList.remove('visivel'), 3500);
+  }
+
+  // A biblioteca (html-to-image, servida de /static) só baixa no primeiro uso.
+  let carregandoBiblioteca = null;
+  function carregarBiblioteca() {
+    if (window.htmlToImage) return Promise.resolve();
+    return carregandoBiblioteca ??= new Promise((ok, falha) => {
+      const tag = document.createElement('script');
+      tag.src = '/static/vendor/html-to-image.js';
+      tag.onload = ok;
+      tag.onerror = () => { carregandoBiblioteca = null; falha(new Error('biblioteca')); };
+      document.head.append(tag);
+    });
+  }
+
+  const nomeDoArquivo = titulo => 'letterboxd-stats-' + titulo.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') + '.png';
+
+  // O ícone do cabeçalho é um <use> para o sprite da página; na imagem isolada o
+  // sprite não existe, então os traços do símbolo entram no próprio <svg>.
+  function embutirIcones(clone) {
+    clone.querySelectorAll('svg.icone').forEach(svg => {
+      const simbolo = document.querySelector(svg.querySelector('use').getAttribute('href'));
+      svg.setAttribute('viewBox', simbolo.getAttribute('viewBox'));
+      svg.replaceChildren(...[...simbolo.children].map(c => c.cloneNode(true)));
+    });
+  }
+
+  // Largura que o cartão tem no layout do desktop, tirada das mesmas medidas do
+  // CSS (largura máxima e margem do conteúdo, intervalo da grade `.duas`): a
+  // imagem não depende da janela de quem exporta, então um PNG feito no celular
+  // sai igual ao do desktop. Cartão numa `.duas` ocupa uma de duas colunas.
+  function larguraNoDesktop(cartao) {
+    const pagina = getComputedStyle(document.querySelector('main.envelope'));
+    const util = parseFloat(pagina.maxWidth) - parseFloat(pagina.paddingLeft)
+      - parseFloat(pagina.paddingRight);
+    const grade = cartao.closest('.duas');
+    return grade ? (util - parseFloat(getComputedStyle(grade).columnGap)) / 2 : util;
+  }
+
+  // Clona o cartão para fora da tela (o cartão vivo não muda), tira o que só faz
+  // sentido na página e gera o PNG.
+  async function gerarPng(cartao) {
+    await carregarBiblioteca();
+    const clone = cartao.cloneNode(true);
+    clone.querySelectorAll('.cabeca-extra, .ver-mais').forEach(el => el.remove());
+    clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    clone.querySelectorAll('img').forEach(img => { img.loading = 'eager'; });
+    embutirIcones(clone);
+    const rodape = document.createElement('div');
+    rodape.className = 'exporta-rodape';
+    rodape.textContent = `@${usuario} · letterboxdstats.party`;
+    const pagina = document.createElement('div');
+    pagina.className = 'exporta';
+    pagina.style.width = (larguraNoDesktop(cartao) + 48) + 'px';
+    pagina.append(clone, rodape);
+    document.body.append(pagina);
+    try {
+      return await htmlToImage.toBlob(pagina, {
+        pixelRatio: 2, skipFonts: true,
+        // Os pôsteres já estão no cache do navegador, gravados pelas <img> comuns
+        // (sem CORS); reaproveitar essa cópia faz o fetch com CORS falhar. O TMDB
+        // manda `Access-Control-Allow-Origin: *`, então basta ir à rede.
+        fetchRequestInit: {cache: 'reload'},
+        backgroundColor: getComputedStyle(document.body).backgroundColor,
+        // O contêiner fica fora da tela na página; na imagem, não.
+        style: {position: 'static', left: 'auto', top: 'auto'},
+      });
+    } finally {
+      pagina.remove();
+    }
+  }
+
+  function fecharMenu() { if (menu.matches(':popover-open')) menu.hidePopover(); }
+
+  document.addEventListener('click', e => {
+    const botao = e.target.closest('.compartilhar');
+    if (!botao) return;
+    const cartao = botao.closest('.secao');
+    // Clicar no botão com o menu aberto o fecha: o clique fora já fechou o
+    // popover um instante antes, então o que vale é o horário do fechamento.
+    if (botaoDoMenu === botao && performance.now() - fechouEm < 300) return;
+    botaoDoMenu = botao;
+    tituloDoCartao = cartao.querySelector('h2').textContent.trim();
+    // A imagem começa a ser gerada ao abrir o menu: o navegador só deixa copiar
+    // ou compartilhar logo após o gesto do usuário, e gerar leva alguns segundos.
+    imagemPronta = gerarPng(cartao);
+    imagemPronta.catch(() => {});
+    menu.style.left = menu.style.top = '0px';
+    menu.showPopover();
+    const r = botao.getBoundingClientRect(), m = menu.getBoundingClientRect();
+    menu.style.left = Math.min(Math.max(8, r.right - m.width), innerWidth - m.width - 8) + 'px';
+    menu.style.top = (r.bottom + m.height + 12 > innerHeight && r.top > m.height + 12
+      ? r.top - m.height - 6 : r.bottom + 6) + 'px';
+    botao.setAttribute('aria-expanded', 'true');
+    menu.querySelector('[role=menuitem]:not([hidden])').focus();
+  });
+  menu.addEventListener('toggle', e => {
+    if (e.newState !== 'closed' || !botaoDoMenu) return;
+    fechouEm = performance.now();
+    botaoDoMenu.setAttribute('aria-expanded', 'false');
+    botaoDoMenu.focus();
+  });
+  document.addEventListener('scroll', fecharMenu, true);
+  menu.addEventListener('keydown', e => {
+    const itens = [...menu.querySelectorAll('[role=menuitem]:not([hidden])')];
+    const i = itens.indexOf(document.activeElement);
+    const alvo = {ArrowDown: itens[(i + 1) % itens.length], ArrowUp: itens[(i - 1 + itens.length) % itens.length],
+                  Home: itens[0], End: itens[itens.length - 1]}[e.key];
+    if (alvo) { e.preventDefault(); alvo.focus(); }
+  });
+
+  menu.addEventListener('click', async e => {
+    const item = e.target.closest('[data-acao]');
+    if (!item) return;
+    const imagem = imagemPronta, titulo = tituloDoCartao;
+    const arquivo = nomeDoArquivo(titulo);
+    fecharMenu();
+    if (item.dataset.acao === 'copiar') {
+      try {
+        // A promessa vai direto para o ClipboardItem, ainda dentro do clique: o
+        // Safari exige o gesto, e a imagem pode demorar.
+        await navigator.clipboard.write([new ClipboardItem({'image/png': imagem})]);
+        avisar('Imagem copiada');
+      } catch (erro) {
+        avisar('Não foi possível copiar neste navegador — use Baixar PNG');
+      }
+      return;
+    }
+    let blob;
+    try {
+      avisar('Gerando imagem…');
+      blob = await imagem;
+    } catch (erro) {
+      return avisar('Não foi possível gerar a imagem neste navegador.');
+    }
+    if (item.dataset.acao === 'compartilhar') {
+      try {
+        await navigator.share({files: [new File([blob], arquivo, {type: 'image/png'})], title: titulo});
+        toast.classList.remove('visivel');
+      } catch (erro) {
+        // Fechar o menu do sistema sem escolher nada não é erro.
+        if (erro.name === 'AbortError') toast.classList.remove('visivel');
+        else avisar('Não foi possível compartilhar neste navegador — use Baixar PNG');
+      }
+      return;
+    }
+    const ancora = document.createElement('a');
+    ancora.href = URL.createObjectURL(blob);
+    ancora.download = arquivo;
+    ancora.click();
+    setTimeout(() => URL.revokeObjectURL(ancora.href), 10000);
+    avisar('Imagem baixada');
+  });
+  // ---- exportar cartão: fim ----
+
+  // ---- itens de uma escolha (mapa e gráficos em tela cheia) ----
+  const IMG = "https://image.tmdb.org/t/p";
+  const elemento = (tag, classe, texto) => {
+    const el = document.createElement(tag);
+    if (classe) el.className = classe;
+    if (texto !== undefined) el.textContent = texto;
+    return el;
+  };
+
+  // Mesmo cartão `.filme` das grades de pessoas (macro `filme_linha`), montado
+  // com textContent: título e pôster vêm de dados, não de HTML. Com `data` (as
+  // sessões de uma coluna do tempo), a data assistida vai junto do ano.
+  function cartaoDeFilme(f) {
+    const url = f.tmdb_id ? `https://www.themoviedb.org/movie/${Number(f.tmdb_id)}` : '';
+    const cartao = elemento('div', 'filme');
+    const poster = elemento(url ? 'a' : 'div', 'poster');
+    if (url) {
+      poster.href = url; poster.target = '_blank'; poster.rel = 'noopener noreferrer';
+      poster.tabIndex = -1; poster.setAttribute('aria-hidden', 'true');
+    }
+    if (f.poster) {
+      const img = document.createElement('img');
+      img.loading = 'lazy'; img.alt = ''; img.src = `${IMG}/w92${f.poster}`;
+      poster.append(img);
+    }
+    const titulo = elemento('div', 'titulo corta');
+    if (url) {
+      const link = elemento('a', '', f.titulo);
+      link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+      titulo.append(link);
+    } else titulo.textContent = f.titulo;
+    const corpo = elemento('div', 'corpo');
+    const quando = f.data ? f.data.split('-').reverse().join('/') : '';
+    corpo.append(titulo, elemento('div', 'legenda', [f.ano, quando].filter(Boolean).join(' · ')));
+    const selo = elemento('div', 'selo-nota');
+    if (f.nota === null) selo.append(elemento('span', 'amostra', '—'));
+    else {
+      const badge = elemento('span', 'badge');
+      const decimais = Math.abs(f.nota * 10 - Math.round(f.nota * 10)) < 1e-9 ? 1 : 2;
+      badge.append(elemento('span', 'estrela', '★'), ` ${f.nota.toFixed(decimais)}`);
+      selo.append(badge);
+      // Média de várias entradas, sempre com a amostra ao lado.
+      if (f.avaliacoes > 1) selo.append(elemento('div', 'amostra', `média de ${f.avaliacoes}`));
+    }
+    cartao.append(poster, corpo, selo);
+    return cartao;
+  }
+
+  // A seção "<nome> · N filmes" com a grade de cartões, o botão "Limpar" e os
+  // estados de carregando e erro. `url(chave)` devolve `{nome, tipo, total, itens}`
+  // (tipo "sessoes" ou "filmes"); `marcar(chave)` realça a escolha no gráfico.
+  function criarSelecao({titulo, conteudo, botaoLimpar, ...inicial}) {
+    const memoria = new Map();   // chave -> resposta, para não buscar de novo
+    let escolhido = null, cfg = inicial;   // cfg: tituloPadrao, dica, url, marcar
+    const mensagem = (classe, texto) => conteudo.replaceChildren(elemento('p', classe, texto));
+    const contagem = d => {
+      const [um, varios] = d.tipo === 'sessoes' ? ['sessão', 'sessões'] : ['filme', 'filmes'];
+      return `${d.total} ${d.total === 1 ? um : varios}`;
+    };
+    function mostrar(d) {
+      titulo.textContent = `${d.nome} · ${contagem(d)}`;
+      if (!d.total) return mensagem('sub', d.tipo === 'sessoes'
+        ? `Nenhuma sessão em ${d.nome}` : `Nenhum filme em ${d.nome}`);
+      const grade = elemento('div', 'filmes-pessoa');
+      grade.append(...d.itens.map(cartaoDeFilme));
+      conteudo.replaceChildren(grade);
+    }
+    // `vazio`: o gráfico já sabe que não há nada (país sem filmes), sem buscar.
+    async function escolher(chave, nome, evento, vazio = false) {
+      escolhido = chave;
+      botaoLimpar.hidden = false;
+      cfg.marcar(chave);
+      // Enter/Espaço num botão chega com detail 0: quem usa o teclado perde o
+      // lugar quando o conteúdo muda, então o foco vai para o título.
+      if (evento && evento.detail === 0 && evento.type === 'click') titulo.focus();
+      if (vazio) return mostrar({nome, tipo: 'filmes', total: 0, itens: []});
+      if (memoria.has(chave)) return mostrar(memoria.get(chave));
+      titulo.textContent = nome;
+      mensagem('sub', 'Carregando…');
+      const minha = cfg;
+      let resposta;
+      try {
+        const r = await fetch(cfg.url(chave));
+        if (!r.ok) throw new Error(r.status);
+        resposta = await r.json();
+      } catch (erro) {
+        if (escolhido === chave) mensagem('aviso', 'Não foi possível carregar agora. Tente de novo.');
+        return;
+      }
+      // Trocar de gráfico no meio do pedido torna a resposta de outro assunto.
+      if (minha !== cfg) return;
+      memoria.set(chave, resposta);
+      // Quem escolheu outra coisa enquanto esta carregava não quer ver esta.
+      if (escolhido === chave) mostrar(resposta);
+    }
+    function limpar() {
+      escolhido = null;
+      botaoLimpar.hidden = true;
+      cfg.marcar(null);
+      titulo.textContent = cfg.tituloPadrao;
+      mensagem('sub', cfg.dica);
+    }
+    // Outro gráfico no mesmo diálogo: memória e escolha zeradas, outra config.
+    function reiniciar(nova) {
+      cfg = nova;
+      memoria.clear();
+      limpar();
+    }
+    botaoLimpar.addEventListener('click', limpar);
+    if (cfg.dica) mensagem('sub', cfg.dica);
+    return {escolher, limpar, reiniciar};
+  }
+
+  // Mapa em tela cheia: clona o SVG do cartão ao abrir e dá zoom e arrasto
+  // mexendo no viewBox. Os contornos já estão no HTML; repeti-los dobraria 52 KB.
+  const dialogoMapa = document.getElementById('dialogo-mapa');
+  if (dialogoMapa) {
+    const abrirMapa = document.querySelector('[data-expandir=mapa]');
+    const area = document.getElementById('mapa-grande');
+    const ZOOM_MAXIMO = 8;
+    const ponteiros = new Map();
+    let svg, largura, altura, vb, inicio;
+
+    const aplicar = () => svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    // Com zoom >= 1 o recorte cabe no mapa: prendê-lo aos limites impede
+    // arrastar o desenho inteiro para fora da tela.
+    function limitar() {
+      vb.x = Math.min(Math.max(vb.x, 0), largura - vb.w);
+      vb.y = Math.min(Math.max(vb.y, 0), altura - vb.h);
+      aplicar();
+    }
+    // O ponto sob (cx, cy), em pixels da tela, fica parado; sem ele, o centro.
+    function zoomar(fator, cx, cy) {
+      const r = svg.getBoundingClientRect();
+      const fx = cx === undefined ? .5 : (cx - r.left) / r.width;
+      const fy = cy === undefined ? .5 : (cy - r.top) / r.height;
+      const k = Math.min(Math.max(largura / vb.w * fator, 1), ZOOM_MAXIMO);
+      const px = vb.x + fx * vb.w, py = vb.y + fy * vb.h;
+      vb.w = largura / k; vb.h = altura / k;
+      vb.x = px - fx * vb.w; vb.y = py - fy * vb.h;
+      limitar();
+    }
+
+    abrirMapa.addEventListener('click', () => {
+      if (!svg) {
+        const origem = document.querySelector('#aba-deepdive .mapa svg');
+        [, , largura, altura] = origem.getAttribute('viewBox').split(' ').map(Number);
+        svg = origem.cloneNode(true);
+        area.prepend(svg);
+        document.getElementById('mapa-grande-legenda').append(
+          document.querySelector('#aba-deepdive .mapa-legenda').cloneNode(true));
+      }
+      vb = {x: 0, y: 0, w: largura, h: altura};
+      aplicar();
+      dialogoMapa.showModal();
+    });
+    document.getElementById('fechar-mapa').addEventListener('click', () => dialogoMapa.close());
+    // O preenchimento do <dialog> é zero: um clique nele mesmo é clique no fundo.
+    dialogoMapa.addEventListener('click', e => { if (e.target === dialogoMapa) dialogoMapa.close(); });
+    dialogoMapa.addEventListener('close', () => abrirMapa.focus());
+
+    dialogoMapa.querySelectorAll('[data-zoom]').forEach(b => b.addEventListener('click', () => {
+      if (b.dataset.zoom === 'zero') { vb = {x: 0, y: 0, w: largura, h: altura}; aplicar(); }
+      else zoomar(b.dataset.zoom === 'mais' ? 1.5 : 1 / 1.5);
+    }));
+
+    area.addEventListener('wheel', e => {
+      e.preventDefault();
+      zoomar(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 33 : 1) * .002), e.clientX, e.clientY);
+    }, {passive: false});
+
+    area.addEventListener('pointerdown', e => {
+      area.setPointerCapture(e.pointerId);
+      ponteiros.set(e.pointerId, {x: e.clientX, y: e.clientY});
+      area.classList.add('arrastando');
+      // O alvo é lido agora: com a captura, o pointerup já não aponta para o
+      // país. Com dois dedos (pinça) não há clique.
+      inicio = ponteiros.size === 1
+        ? {x: e.clientX, y: e.clientY, pais: e.target.closest('path[data-iso]')} : null;
+    });
+    area.addEventListener('pointermove', e => {
+      const antes = ponteiros.get(e.pointerId);
+      if (!antes) return;
+      if (ponteiros.size === 1) {
+        const escala = vb.w / svg.getBoundingClientRect().width;
+        vb.x -= (e.clientX - antes.x) * escala;
+        vb.y -= (e.clientY - antes.y) * escala;
+        limitar();
+      } else if (ponteiros.size === 2) {
+        // Pinça: a razão entre as distâncias dos dois dedos é o fator do zoom.
+        const outro = [...ponteiros].find(([id]) => id !== e.pointerId)[1];
+        const antiga = Math.hypot(antes.x - outro.x, antes.y - outro.y);
+        const nova = Math.hypot(e.clientX - outro.x, e.clientY - outro.y);
+        if (antiga) zoomar(nova / antiga, (e.clientX + outro.x) / 2, (e.clientY + outro.y) / 2);
+      }
+      ponteiros.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    });
+    const soltar = e => {
+      // Arrastar para mover o mapa não é clicar: só conta se mal saiu do lugar.
+      if (e.type === 'pointerup' && inicio && inicio.pais && ponteiros.size === 1
+          && Math.hypot(e.clientX - inicio.x, e.clientY - inicio.y) < 4) {
+        escolherPais(inicio.pais.dataset.iso, inicio.pais.dataset.nome, e);
+      }
+      inicio = null;
+      ponteiros.delete(e.pointerId);
+      if (!ponteiros.size) area.classList.remove('arrastando');
+    };
+    area.addEventListener('pointerup', soltar);
+    area.addEventListener('pointercancel', soltar);
+
+    // ---- filmes do país escolhido ----
+    const selecao = criarSelecao({
+      titulo: document.getElementById('pais-titulo'),
+      conteudo: document.getElementById('pais-conteudo'),
+      botaoLimpar: document.getElementById('limpar-pais'),
+      tituloPadrao: 'Filmes por país',
+      dica: 'Clique num país do mapa, ou numa linha da lista de países, para ver os filmes dele.',
+      url: iso => `/p/${slug}/itens/pais.json?valor=${encodeURIComponent(iso)}`,
+      marcar: iso => {
+        svg.querySelectorAll('path.selecionado').forEach(p => p.classList.remove('selecionado'));
+        dialogoMapa.querySelectorAll('.pais-linha').forEach(
+          b => b.setAttribute('aria-pressed', iso !== null && b.dataset.iso === iso));
+        // O contorno vai para o fim do SVG para a borda não ficar por baixo dos vizinhos.
+        if (iso !== null) svg.querySelectorAll(`path[data-iso="${iso}"]`).forEach(p => {
+          p.classList.add('selecionado'); svg.append(p);
+        });
+      },
+    });
+    const escolherPais = (iso, nome, evento) => {
+      const contornos = svg.querySelector(`path[data-iso="${iso}"]`);
+      return selecao.escolher(iso, nome, evento, !!contornos && contornos.dataset.filmes === '0');
+    };
+    dialogoMapa.querySelectorAll('.pais-linha').forEach(b => b.addEventListener(
+      'click', e => escolherPais(b.dataset.iso, b.dataset.nome, e)));
+  }
+  // ---- gráficos em tela cheia (colunas e listas completas) ----
+  // Um <dialog> só, reaproveitado por todos os cartões com o botão de expandir
+  // (o mapa tem o seu). Colunas: o gráfico do cartão é clonado e cada coluna vira
+  // botão. Listas: o ranking inteiro vem do servidor ao abrir, porque o cartão
+  // só mostra o começo (e temas podem ser centenas). Aqui não há compartilhar:
+  // o botão só existe no cartão, e a exportação nunca olha para o diálogo.
+  const dialogoGrafico = document.getElementById('dialogo-grafico');
+  const areaGrafico = document.getElementById('dg-grafico');
+  const rankings = new Map();   // dimensão -> linhas, para não buscar de novo
+  const TEMPORAIS = ['ano', 'mes', 'dia'];
+  let botaoDoGrafico = null, dimensaoAberta = null;
+  const selecaoGrafico = criarSelecao({
+    titulo: document.getElementById('dg-selecao-titulo'),
+    conteudo: document.getElementById('dg-conteudo'),
+    botaoLimpar: document.getElementById('dg-limpar'),
+    tituloPadrao: '', dica: '', url: () => '', marcar: () => {},
+  });
+
+  function linhasDeRanking(linhas, dimensao) {
+    const maximo = Math.max(...linhas.map(l => l.filmes), 1);
+    const caixa = elemento('div', 'paises-lista lista-completa');
+    linhas.forEach((l, i) => {
+      const botao = elemento('button', 'pais-linha');
+      botao.type = 'button';
+      botao.dataset.valor = l.valor; botao.dataset.nome = l.nome;
+      botao.setAttribute('aria-pressed', 'false');
+      const nome = elemento('span', 'nome corta', l.nome);
+      if (l.detalhe) nome.append(' ', elemento('span', 'detalhe', l.detalhe));
+      const barra = elemento('span', 'barra'), cheia = elemento('span');
+      cheia.style.width = `${l.pct ?? 100 * l.filmes / maximo}%`;
+      barra.append(cheia);
+      botao.append(elemento('span', 'iso', dimensao === 'duracao' ? '' : i + 1), nome, barra,
+        elemento('span', 'qtd', l.pct === null ? `${l.filmes}` : `${l.filmes} (${Math.round(l.pct)}%)`));
+      caixa.append(botao);
+    });
+    return caixa;
+  }
+
+  async function abrirGrafico(botao) {
+    const cartao = botao.closest('.secao'), dimensao = botao.dataset.expandir;
+    botaoDoGrafico = botao;
+    document.getElementById('dg-titulo').textContent = cartao.querySelector('h2').textContent.trim();
+    document.getElementById('dg-icone').replaceChildren(cartao.querySelector('.icone-caixa').cloneNode(true));
+    dialogoGrafico.showModal();
+    // Reabrir o mesmo gráfico o encontra como foi deixado, com a escolha.
+    if (dimensao === dimensaoAberta) return;
+    dimensaoAberta = dimensao;
+    const temporal = TEMPORAIS.includes(dimensao), colunas = !!cartao.querySelector('.colunas-rolagem');
+    selecaoGrafico.reiniciar({
+      tituloPadrao: temporal ? 'Sessões' : 'Filmes',
+      dica: colunas ? `Clique numa coluna para ver ${temporal ? 'as sessões' : 'os filmes'} dela.`
+                    : 'Clique numa linha da lista para ver os filmes.',
+      url: valor => `/p/${slug}/itens/${dimensao}.json?valor=${encodeURIComponent(valor)}`,
+      marcar: valor => areaGrafico.querySelectorAll('[data-valor]').forEach(
+        e => e.setAttribute('aria-pressed', valor !== null && e.dataset.valor === valor)),
+    });
+    if (colunas) {
+      const grafico = cartao.querySelector('.colunas-rolagem').cloneNode(true);
+      grafico.querySelectorAll('.colunas > div').forEach(c => {
+        c.setAttribute('role', 'button'); c.setAttribute('aria-pressed', 'false');
+        c.dataset.nome = c.dataset.dica.split('|')[0];
+      });
+      return areaGrafico.replaceChildren(grafico);
+    }
+    areaGrafico.replaceChildren(elemento('p', 'sub', 'Carregando…'));
+    try {
+      if (!rankings.has(dimensao)) {
+        const r = await fetch(`/p/${slug}/ranking/${dimensao}.json`);
+        if (!r.ok) throw new Error(r.status);
+        rankings.set(dimensao, (await r.json()).linhas);
+      }
+    } catch (erro) {
+      dimensaoAberta = null;   // a próxima abertura tenta de novo
+      return areaGrafico.replaceChildren(elemento('p', 'aviso', 'Não foi possível carregar a lista agora.'));
+    }
+    if (dimensaoAberta === dimensao) areaGrafico.replaceChildren(linhasDeRanking(rankings.get(dimensao), dimensao));
+  }
+  document.addEventListener('click', e => {
+    const botao = e.target.closest('.expandir');
+    if (botao && botao.dataset.expandir !== 'mapa') abrirGrafico(botao);
+  });
+  areaGrafico.addEventListener('click', e => {
+    const alvo = e.target.closest('[data-valor]');
+    if (alvo) selecaoGrafico.escolher(alvo.dataset.valor, alvo.dataset.nome, e);
+  });
+  // Colunas são <div role="button">: Enter e Espaço as acionam como a um botão.
+  areaGrafico.addEventListener('keydown', e => {
+    const alvo = e.target.closest('[role=button]');
+    if (alvo && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); alvo.click(); }
+  });
+  document.getElementById('fechar-grafico').addEventListener('click', () => dialogoGrafico.close());
+  dialogoGrafico.addEventListener('click', e => { if (e.target === dialogoGrafico) dialogoGrafico.close(); });
+  dialogoGrafico.addEventListener('close', () => botaoDoGrafico.focus());
+
+  const botoes = document.querySelectorAll('.abas button');
+  const barra = document.querySelector('.abas');
+  // A borda direita esmaece só enquanto houver abas escondidas à direita.
+  const esmaecerAbas = () => barra.classList.toggle(
+    'mais-direita', barra.scrollLeft + barra.clientWidth < barra.scrollWidth - 2);
+  barra.addEventListener('scroll', esmaecerAbas);
+  addEventListener('resize', esmaecerAbas);
+  function mostrar(nome, empurrar = true) {
+    botoes.forEach(b => {
+      const ativa = b.dataset.aba === nome;
+      b.setAttribute('aria-selected', ativa);
+      document.getElementById('aba-' + b.dataset.aba).hidden = !ativa;
+    });
+    if (empurrar) history.replaceState(null, '', '#' + nome);
+    if (nome === 'recommendations') carregarRecomendacoes();
+    // Em tela estreita a fileira de abas rola: a ativa vem para o meio.
+    const ativa = [...botoes].find(b => b.dataset.aba === nome);
+    barra.scrollLeft = ativa.offsetLeft - (barra.clientWidth - ativa.offsetWidth) / 2;
+    esmaecerAbas();
+  }
+  botoes.forEach(b => b.addEventListener('click', () => mostrar(b.dataset.aba)));
+
+  // Sub-abas de pessoas: mesma mecânica das abas, sem tocar no hash da URL.
+  const subbotoes = document.querySelectorAll('.subabas button');
+  subbotoes.forEach(b => b.addEventListener('click', () => {
+    subbotoes.forEach(o => {
+      const ativa = o === b;
+      o.setAttribute('aria-selected', ativa);
+      document.getElementById('sub-' + o.dataset.sub).hidden = !ativa;
+    });
+  }));
+
+  // Recomendações carregam sob demanda: dependem de um job de ~15s, e quem só
+  // quer ver estatísticas não deve disparar esse trabalho sem pedir.
+  let jaPedi = false;
+  const alvo = document.getElementById('rec-conteudo');
+  const esc = t => { const d = document.createElement('div'); d.textContent = t ?? ''; return d.innerHTML; };
+
+  async function carregarRecomendacoes() {
+    if (jaPedi) return; jaPedi = true;
+    try {
+      const j = await (await fetch(`/p/${slug}/recomendacoes.json`)).json();
+      if (j.situacao === 'pronto') return desenhar(j.dados);
+      if (j.situacao === 'sem_referencia') {
+        alvo.innerHTML = `<div class="aviso">O corpus de referência ainda está sendo
+          montado. Ele é a linha de base que revela o que é <em>distintivo</em> no
+          seu gosto — sem ele, "você gosta de drama" seria a única conclusão
+          possível. Leva alguns minutos e acontece uma vez só.</div>`;
+        jaPedi = false; return;
+      }
+      acompanhar(j.job);
+    } catch (e) {
+      alvo.innerHTML = '<div class="aviso">Não foi possível carregar agora.</div>';
+      jaPedi = false;
+    }
+  }
+
+  function acompanhar(jobId) {
+    alvo.innerHTML = `<p class="sub" id="rec-etapa">preparando…</p>
+      <div class="painel"><div class="barra" style="height:10px">
+        <span id="rec-barra" style="width:0%; transition:width .4s"></span></div></div>`;
+    (async function passo() {
+      try {
+        const j = await (await fetch(`/jobs/${jobId}/estado`)).json();
+        document.getElementById('rec-barra').style.width = j.percentual + '%';
+        document.getElementById('rec-etapa').textContent =
+          `${j.etapa || 'preparando…'}${j.total ? ` — ${j.feitos} de ${j.total}` : ''}`;
+        if (!j.terminou) return setTimeout(passo, 1000);
+        if (j.estado === 'concluido') {
+          const r = await (await fetch(`/p/${slug}/recomendacoes.json`)).json();
+          if (r.situacao === 'pronto') return desenhar(r.dados);
+        }
+        alvo.innerHTML = `<div class="aviso">${esc(j.erro || 'O cálculo não terminou. Recarregue para tentar de novo.')}</div>`;
+        jaPedi = false;
+      } catch (e) { setTimeout(passo, 3000); }
+    })();
+  }
+
+  function desenhar(dados) {
+    const gosto = Object.entries(dados.perfil_gosto).map(([rotulo, itens]) => `
+      <div class="painel">
+        <div class="rotulo" style="margin-bottom:8px">${esc(rotulo)}</div>
+        ${itens.length
+          ? itens.map(([t]) => `<div style="font-size:.88rem">${esc(t.split(':').slice(1).join(':'))}</div>`).join('')
+          : '<div class="legenda">sem sinal suficiente</div>'}
+      </div>`).join('');
+
+    const filmes = dados.itens.map(i => {
+      const tmdb = `https://www.themoviedb.org/movie/${Number(i.tmdb_id)}`;
+      // O pôster repete o link do título: fora da ordem de tabulação e do
+      // leitor de tela, para não anunciar o mesmo destino duas vezes.
+      return `
+      <div class="painel rec">
+        <a class="poster" href="${tmdb}" target="_blank" rel="noopener noreferrer"
+           tabindex="-1" aria-hidden="true">
+          ${i.poster ? `<img loading="lazy" alt="" src="${IMG}/w185${esc(i.poster)}">` : ''}
+        </a>
+        <div style="min-width:0; flex:1">
+          <div><a class="titulo" href="${tmdb}" target="_blank"
+                  rel="noopener noreferrer">${esc(i.titulo)}</a></div>
+          <div class="legenda">${i.ano || ''}${i.direcao ? ' · ' + esc(i.direcao) : ''}</div>
+          <div style="font-size:.82rem; color:var(--link); margin-top:4px">${esc(i.motivo)}</div>
+          ${i.nota_tmdb
+            ? `<div class="amostra" style="margin-top:5px">
+                 <span class="estrela">★</span> ${(i.nota_tmdb / 2).toFixed(1)} média tmdb</div>`
+            : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    alvo.innerHTML = `
+      <p class="sub">Cada traço vale pelo quanto aparece mais no seu histórico do que
+      no cinema em geral. Por isso gênero pesa pouco e direção pesa muito.</p>
+      <h2>O que define o seu gosto</h2>
+      <div class="grade">${gosto}</div>
+      <h2>Para você assistir</h2>
+      <div class="duas" style="gap:10px">${filmes || ''}</div>
+      ${filmes ? '' : '<div class="aviso">Nenhum candidato passou pelos filtros.</div>'}
+      <p class="nota-rodape">Dados de filmes e imagens por
+        <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a>.
+        As médias exibidas são do TMDB, não do Letterboxd. Projeto sem associação
+        com TMDB ou Letterboxd.</p>`;
+  }
+
+  // Por último: abrir direto em #recommendations chama carregarRecomendacoes,
+  // que usa `jaPedi`; antes da declaração, isso lançava erro e a aba ficava
+  // em "Carregando…" para sempre.
+  const inicial = location.hash.slice(1);
+  mostrar([...botoes].some(b => b.dataset.aba === inicial) ? inicial : 'overview', false);
+</script>
+{% endblock %}

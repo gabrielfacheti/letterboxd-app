@@ -1,0 +1,15 @@
+# Segredos e dados pessoais nunca entram na imagem.
+.env
+*.env
+data/
+*.sqlite
+*.sqlite3
+
+.git
+.venv
+.pytest_cache
+__pycache__
+graphify-out
+tests
+scripts
+.claude

@@ -1,0 +1,49 @@
+# Stack do app — ver .claude/specs/deploy.md.
+#
+# Nenhum serviço publica porta. O app só é alcançável pelo cloudflared, que
+# abre a conexão de dentro para fora; é isso que mantém o roteador fechado e
+# torna seguro confiar no cabeçalho CF-Connecting-IP.
+
+name: letterboxd
+
+x-endurecido: &endurecido
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [letterboxd]
+
+services:
+  app:
+    <<: *endurecido
+    build: .
+    # Cada serviço recebe só o segredo que usa, em vez do .env inteiro.
+    environment:
+      TMDB_KEY: ${TMDB_KEY:?defina TMDB_KEY no .env}
+    # Os três SQLite. O diretório precisa pertencer ao uid 10001 da imagem.
+    volumes:
+      - ./data:/data
+    # Uploads acima de 1 MB transbordam para /tmp; em tmpfs, o export do
+    # usuário fica na RAM e nunca toca o disco, como a página inicial promete.
+    tmpfs:
+      - /tmp:size=128m
+    # Limites de memória do usuário no systemd não cobrem containers: sem este
+    # teto, uma stack nova pode derrubar os outros serviços da máquina.
+    # Medido: pico de 114 MiB processando um export real e gerando
+    # recomendações.
+    mem_limit: 512m
+    pids_limit: 256
+
+  cloudflared:
+    <<: *endurecido
+    image: cloudflare/cloudflared:2026.9.3
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?defina TUNNEL_TOKEN no .env}
+    depends_on: [app]
+    mem_limit: 128m
+    pids_limit: 64
+
+# Rede própria: não encosta na das outras stacks.
+networks:
+  letterboxd:

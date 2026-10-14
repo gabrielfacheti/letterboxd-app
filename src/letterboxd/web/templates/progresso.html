@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Processando…{% endblock %}
+{% block conteudo %}
+<h1>Processando {{ job.alvo }}</h1>
+<p class="sub" id="etapa">{{ job.etapa or 'começando…' }}</p>
+
+<div class="painel">
+  <div class="barra" style="height:14px">
+    <span id="preenchimento" style="width:{{ job.percentual }}%; transition:width .4s"></span>
+  </div>
+  <p class="sub" style="margin:12px 0 0">
+    <span id="percentual">{{ job.percentual }}</span>% <span id="contagem"></span>
+  </p>
+</div>
+
+<div id="erro" class="aviso" style="margin-top:16px; display:none"></div>
+
+<div class="aviso" style="margin-top:16px">
+  Buscar os metadados de um histórico completo leva cerca de um minuto na
+  primeira vez. Depois disso fica em cache e é instantâneo.
+  <!-- Espaço natural para, no futuro, mostrar os lançamentos da semana
+       enquanto o processamento roda. -->
+</div>
+
+<script>
+  // Consulta o estado a cada segundo. Sem WebSocket de propósito: um job dura
+  // um minuto e polling simples não tem estado para dar errado.
+  const id = {{ job.id | tojson }};
+  async function consultar() {
+    try {
+      const r = await fetch(`/jobs/${id}/estado`);
+      if (!r.ok) return;
+      const j = await r.json();
+
+      document.getElementById('preenchimento').style.width = j.percentual + '%';
+      document.getElementById('percentual').textContent = j.percentual;
+      document.getElementById('etapa').textContent = j.etapa || 'começando…';
+      document.getElementById('contagem').textContent =
+        j.total ? `— ${j.feitos} de ${j.total}` : '';
+
+      if (j.terminou) {
+        if (j.destino) { window.location = j.destino; return; }
+        const caixa = document.getElementById('erro');
+        caixa.style.display = 'block';
+        caixa.textContent = j.estado === 'interrompido'
+          ? 'O processamento foi interrompido por um reinício do servidor. Tente de novo.'
+          : (j.erro || 'Terminou sem produzir um perfil.');
+        return;
+      }
+      setTimeout(consultar, 1000);
+    } catch (e) {
+      setTimeout(consultar, 3000);  // rede instável: espera mais e insiste
+    }
+  }
+  consultar();
+</script>
+{% endblock %}

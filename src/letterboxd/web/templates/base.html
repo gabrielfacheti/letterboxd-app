@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- O endereço do perfil é o segredo: não pode vazar no Referer para as CDNs
+     de imagem do TMDB nem para os links externos. -->
+<meta name="referrer" content="no-referrer">
+<title>{% block titulo %}letterboxd stats{% endblock %}</title>
+<style>
+  :root {
+    /* Cartões visivelmente mais claros que o fundo, como no Figma. */
+    --fundo: #111418; --painel: #1b2027; --painel-alto: #252b34;
+    --borda: #2a3039; --texto: #e6edf3; --suave: #7d8590;
+    --acento: #ff6b1a; --acento-fraco: #ff6b1a33; --link: var(--lb-azul);
+    --trilho: #343c48;
+    /* Cores da marca do Letterboxd: o verde das estrelas, o azul da aba ativa. */
+    --lb-verde: #00e055; --lb-azul: #40bcf4;
+    /* Fatias da pizza de gênero: feminino, masculino, não-binário e
+       desconhecido (cinza que ainda se lê sobre o painel escuro). */
+    --pizza-0: var(--lb-verde); --pizza-1: var(--lb-azul); --pizza-2: var(--acento);
+    --pizza-3: #6e7681;
+    /* Barra de gêneros dos filmes revistos: três da marca e dois tons discretos. */
+    --rev-0: var(--acento); --rev-1: var(--lb-verde); --rev-2: var(--lb-azul);
+    --rev-3: #9a8fc7; --rev-4: #c2a35f; --rev-outros: #59616d;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fundo); color: var(--texto);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---- cabeçalho e abas ---- */
+  .topo { border-bottom: 1px solid var(--borda); background: var(--painel); }
+  .topo .envelope { padding: 14px 20px 0; }
+  .marca { display: flex; align-items: center; gap: 8px; font-weight: 700;
+           font-size: .95rem; letter-spacing: -.01em; }
+  .marca .disco { width: 16px; height: 16px; border-radius: 50%;
+                  border: 2px solid var(--acento); position: relative; }
+  .marca .disco::after { content: ""; position: absolute; inset: 3px;
+                         border-radius: 50%; background: var(--acento); }
+  .marca span { color: var(--acento); }
+
+  .abas { display: flex; gap: 2px; margin-top: 12px;
+          overflow-x: auto; scrollbar-width: none; }
+  .abas::-webkit-scrollbar { display: none; }
+  /* Quando há mais abas à direita, a borda direita esmaece (o script liga a
+     classe só enquanto houver o que rolar). */
+  .abas.mais-direita { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+                       mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+  .abas button, .subabas button {
+    background: none; color: var(--suave); border: 0;
+    border-bottom: 2px solid transparent; border-radius: 0;
+    padding: 10px 14px; font-size: .9rem; font-weight: 500;
+    white-space: nowrap; cursor: pointer; font-family: inherit;
+  }
+  .abas button:hover, .subabas button:hover { color: var(--texto); }
+  .abas button[aria-selected="true"], .subabas button[aria-selected="true"] {
+    color: var(--lb-azul); border-bottom-color: var(--lb-azul); }
+  /* Anel de foco visível só para teclado, separado do estado ativo. */
+  .abas button:focus-visible, .subabas button:focus-visible {
+    outline: 1px solid var(--acento); outline-offset: -3px; border-radius: 4px; }
+  /* Abas de segundo nível, dentro do conteúdo: a mesma aparência, com um filete
+     embaixo para separá-las do que vem depois. */
+  .subabas { display: flex; gap: 2px; margin-top: 20px;
+             border-bottom: 1px solid var(--borda); }
+
+  /* ---- estrutura ---- */
+  .envelope { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+  main.envelope { padding-bottom: 72px; }
+  [role="tabpanel"][hidden] { display: none; }
+
+  h1 { font-size: 1.5rem; margin: 0 0 2px; }
+  h2 {
+    font-family: var(--mono); font-size: .74rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .12em; color: var(--suave);
+    margin: 28px 0 10px;
+  }
+  .sub { color: var(--suave); font-size: .88rem; margin: 0 0 20px; }
+
+  .painel { background: var(--painel); border: 1px solid var(--borda);
+            border-radius: 10px; padding: 16px; }
+  .grade { display: grid; gap: 12px;
+           grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .duas { display: grid; gap: 14px;
+          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  /* Cartões lado a lado têm a mesma altura (a grade estica os dois); com
+     `iguais`, o corpo do menor ainda se centraliza no espaço que sobra. */
+  .duas.iguais .secao-corpo { display: flex; flex-direction: column;
+                              justify-content: center; }
+
+  /* ---- cartão de número ---- */
+  .rotulo { font-family: var(--mono); font-size: .68rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: .1em; color: var(--suave); }
+  .numero { font-size: 1.85rem; font-weight: 700; line-height: 1.15;
+            margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+  .numero.destaque { color: var(--acento); }
+  .legenda { font-size: .78rem; color: var(--suave); }
+
+  /* ---- cartão com cabeçalho: ícone, título e subtítulo ---- */
+  .secao { display: flex; flex-direction: column; margin-top: 16px; }
+  .secao-corpo { flex: 1; }
+  .cabeca-secao { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .cabeca-texto { min-width: 0; flex: 1; }
+  /* O <h2> do cartão perde o estilo de rótulo (mono, caixa alta, cinza) dos
+     títulos de seção: aqui ele é o título do próprio cartão. */
+  .cabeca-secao h2 { margin: 0; font-family: inherit; font-size: 1rem; font-weight: 700;
+                     line-height: 1.3; text-transform: none; letter-spacing: 0;
+                     color: var(--texto); }
+  .cabeca-secao .legenda { margin-top: 1px; }
+  .cabeca-extra { flex: none; display: flex; align-items: center; gap: 8px; }
+  /* Só o ícone: sem fundo nem borda em repouso; a área de 32 px é invisível e o
+     foco do teclado ainda desenha o anel (`.btn:focus-visible`). */
+  .btn.btn-icone { width: 32px; height: 32px; padding: 0; display: grid; place-items: center;
+                   background: none; border-color: transparent; color: var(--suave); }
+  .btn.btn-icone:hover { background: none; border-color: transparent; color: var(--texto); }
+  .btn.btn-icone:active { color: var(--lb-azul); }
+  /* Menu de compartilhar: um popover só para a página toda, posicionado pelo
+     script junto ao botão do cartão. */
+  .menu-compartilhar { inset: auto; margin: 0; padding: 6px; min-width: 210px;
+                       background: var(--painel-alto); color: var(--texto);
+                       border: 1px solid var(--borda); border-radius: 10px; }
+  .menu-compartilhar button { display: block; width: 100%; padding: 8px 10px; border: 0;
+                              border-radius: 6px; background: none; color: inherit;
+                              font: inherit; font-size: .9rem; text-align: left; cursor: pointer; }
+  .menu-compartilhar button:hover, .menu-compartilhar button:focus-visible {
+    background: var(--painel); outline: none; }
+  .menu-compartilhar button:focus-visible { box-shadow: inset 0 0 0 1px var(--acento); }
+  .menu-compartilhar [hidden] { display: none; }
+  .menu-compartilhar .legenda { padding: 0 10px 4px; }
+  /* Aviso curto de resultado (copiou, não deu certo...), anunciado por aria-live. */
+  .toast { position: fixed; left: 50%; bottom: 24px; z-index: 50; max-width: min(90vw, 420px);
+           transform: translate(-50%, 8px); padding: 10px 16px; border-radius: 8px;
+           background: var(--painel-alto); border: 1px solid var(--borda);
+           font-size: .88rem; opacity: 0; pointer-events: none;
+           transition: opacity .2s, transform .2s; }
+  .toast.visivel { opacity: 1; transform: translate(-50%, 0); }
+  /* O cartão clonado para virar imagem, fora da tela: fundo e margem próprios,
+     texto cortado por inteiro e o rodapé com o usuário (nunca o endereço). */
+  .exporta { position: fixed; left: -10000px; top: 0; padding: 24px; background: var(--fundo); }
+  .exporta .secao { margin-top: 0; }
+  /* Gráfico de colunas: na imagem não há rolagem, as colunas encolhem para caber. */
+  .exporta .colunas-rolagem { overflow: visible; }
+  .exporta .colunas > div { flex: 1 1 0; min-width: 0; }
+  /* Sem animação na imagem: a linha de pessoa recém-aberta começa transparente e a
+     imagem isolada reiniciaria a animação do zero, saindo em branco. */
+  .exporta, .exporta * { animation: none !important; transition: none !important; }
+  /* Texto cortado vira texto que quebra de linha: a linha cresce em vez de o nome
+     passar por cima da barra. O truque `max-width: 1px` de `td.nome` só serve a
+     texto em linha única; com quebra, ele espremeria a coluna. */
+  .exporta .corta { white-space: normal; overflow: visible; text-overflow: clip;
+                    overflow-wrap: anywhere; }
+  .exporta td.nome { max-width: none; }
+  /* A imagem sai sempre com o arranjo do desktop, de qualquer celular: as regras
+     de tela estreita (@media) olham a janela, não o cartão, então são desfeitas aqui. */
+  .exporta .rotulo { font-size: .68rem; }
+  .exporta .amostra { font-size: .68rem; }
+  .exporta .posicao { font-size: .66rem; }
+  .exporta .colunas .eixo { font-size: .66rem; }
+  .exporta .rev-grade { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+  .exporta .rev-destaque .rev-poster { width: 96px; }
+  .exporta .rev-foto { width: 96px; height: 96px; }
+  .exporta .rev-destaques { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .exporta .filmes-pessoa { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .exporta .pessoa-linha summary {
+    grid-template-areas: "pos foto nome numeros seta";
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
+  .exporta .pessoa-linha .numeros { grid-template-columns: 3.4rem 6.2rem 6.2rem;
+                                    justify-content: normal; }
+  .exporta-rodape { margin-top: 14px; text-align: right; font-family: var(--mono);
+                    font-size: .72rem; color: var(--suave); }
+  .icone-caixa { flex: none; width: 32px; height: 32px; border-radius: 8px;
+                 display: grid; place-items: center; color: var(--lb-azul);
+                 background: color-mix(in srgb, var(--lb-azul) 14%, transparent); }
+  .icone { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.75;
+           stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---- listas com posição e barra ---- */
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 6px 0; vertical-align: middle; }
+  td.pos { font-family: var(--mono); font-size: .72rem; color: var(--suave);
+           width: 1.6rem; text-align: right; padding-right: 10px; }
+  td.nome { max-width: 1px; width: 40%; padding-right: 12px; font-size: .92rem; }
+  td.nome .detalhe { margin-left: 4px; font-size: .74rem; color: var(--suave); }
+  td.qtd { text-align: right; color: var(--suave); width: 3.4rem;
+           font-family: var(--mono); font-size: .78rem; }
+  td.qtd.larga { width: 5.8rem; white-space: nowrap; }
+  td.nota { text-align: right; width: 4rem; font-family: var(--mono);
+            font-size: .82rem; }
+  .barra { background: var(--trilho); border-radius: 99px; height: 6px;
+           transition: height .2s; }
+  .barra > span { display: block; height: 100%; background: var(--acento);
+                  border-radius: 99px; transition: filter .2s; }
+
+  /* Linha em destaque no hover. O fundo vai nas células porque <tr> não
+     aceita border-radius. */
+  .painel table td { transition: background .15s; }
+  .painel table td:first-child { padding-left: 8px; }
+  .painel table td:last-child { padding-right: 8px; }
+  .painel table tr:hover > td { background: var(--painel-alto); }
+  .painel table tr:hover > td:first-child { border-radius: 6px 0 0 6px; }
+  .painel table tr:hover > td:last-child { border-radius: 0 6px 6px 0; }
+  .painel table tr:hover .barra { height: 8px; }
+  .painel table tr:hover .barra > span { filter: brightness(1.15); }
+  .estrela { color: var(--lb-verde); }
+
+  /* Texto cortado com reticências: quem corta usa `.corta`. O texto inteiro sai
+     numa dica flutuante (`.dica-corta`, um elemento só para a página toda) quando
+     o mouse ou o foco está num `.corta` realmente cortado; ver o script. */
+  .corta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .amostra { color: var(--suave); font-size: .68rem; font-family: var(--mono); }
+
+  /* ---- gráfico de colunas ---- */
+  /* Cada coluna ocupa ao menos a largura do rótulo (`--c` caracteres de .66rem
+     monoespaçado; `--ch` é a largura de um caractere); sobrando espaço, elas esticam como antes. Faltando, o gráfico
+     rola dentro do cartão. */
+  .colunas-rolagem { overflow-x: auto; overscroll-behavior-x: contain;
+                     scrollbar-width: thin; scrollbar-color: var(--trilho) transparent; }
+  .colunas { --ch: .4rem; display: flex; align-items: flex-end; gap: 6px; height: 150px; }
+  .colunas > div { flex: 1 0 calc(var(--c) * var(--ch) + 2px); display: flex; flex-direction: column;
+                   justify-content: flex-end; align-items: center; gap: 8px;
+                   height: 100%; position: relative; border-radius: 6px;
+                   padding-top: 4px; transition: background .2s; }
+  .colunas .torre { width: 100%; max-width: 34px; background: var(--trilho);
+                    border-radius: 3px; min-height: 2px;
+                    transition: background .2s, max-width .2s; }
+  .colunas .torre.pico { background: var(--acento); }
+  .colunas > div:hover, .colunas > div:focus-visible {
+    background: var(--painel-alto); outline: none; }
+  .colunas > div:hover .torre, .colunas > div:focus-visible .torre {
+    background: var(--acento); max-width: 38px; }
+  .colunas > div:focus-visible { box-shadow: inset 0 0 0 1px var(--acento); }
+  .dica-corta b { display: block; color: var(--acento); font-size: .78rem; }
+
+  /* ---- mapa ---- */
+  .mapa { position: relative; }
+  .so-leitor { position: absolute; width: 1px; height: 1px; overflow: hidden;
+               clip: rect(0 0 0 0); white-space: nowrap; }
+  .mapa svg { display: block; }
+  .mapa path { fill: var(--trilho); stroke: var(--painel); stroke-width: .6;
+               transition: fill .2s, fill-opacity .2s, stroke .2s; }
+  .mapa path.com { fill: var(--acento); fill-opacity: calc(.2 + .8 * var(--i)); }
+  .mapa path:hover { stroke: var(--texto); stroke-width: 1; }
+  .mapa path:not(.com):hover { fill: var(--suave); }
+  .mapa path.com:hover { fill-opacity: 1; filter: brightness(1.15); }
+  .mapa-dica, .dica-corta {
+    pointer-events: none;
+    background: var(--fundo); border: 1px solid var(--borda); border-radius: 6px;
+    padding: 5px 9px; font-family: var(--mono); font-size: .7rem; color: var(--suave);
+    opacity: 0; transition: opacity .15s, transform .15s; }
+  .mapa-dica { position: absolute; white-space: nowrap;
+               transform: translateY(-100%) translateY(4px); }
+  .mapa-dica.visivel { opacity: 1; transform: translateY(-100%); }
+  /* Popover: vai para a camada de topo, então aparece também sobre o <dialog>.
+     A posição vem do script; o padrão do navegador (centralizado) é anulado. */
+  .dica-corta { inset: auto; margin: 0; max-width: min(360px, calc(100vw - 16px));
+                overflow-wrap: anywhere; transform: translateY(4px); }
+  .dica-corta.visivel { opacity: 1; transform: none; }
+  .mapa-dica b { display: block; color: var(--acento); font-size: .78rem; }
+  .mapa-legenda { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 12px;
+                  font-family: var(--mono); font-size: .7rem; color: var(--suave); }
+  .mapa-legenda .amostra::before { content: "· "; }
+  .mapa-legenda .gradiente {
+    width: 120px; height: 6px; border-radius: 99px;
+    background: linear-gradient(90deg,
+      color-mix(in srgb, var(--acento) 20%, var(--painel)), var(--acento)); }
+
+  /* ---- mapa em tela cheia ---- */
+  .titulo-mapa { display: flex; justify-content: space-between; align-items: flex-end;
+                 gap: 12px; }
+  .titulo-mapa h2 { margin-right: auto; }
+  .titulo-mapa .btn { margin-bottom: 8px; }
+  .btn { background: var(--painel); color: var(--texto); border: 1px solid var(--borda);
+         border-radius: 8px; padding: 6px 12px; cursor: pointer;
+         font-family: var(--mono); font-size: .74rem;
+         transition: border-color .15s, background .15s; }
+  .btn:hover { background: var(--painel-alto); border-color: var(--suave); }
+  .btn:focus-visible { outline: 1px solid var(--acento); outline-offset: 2px; }
+  body:has(dialog[open]) { overflow: hidden; }
+  dialog { background: var(--fundo); color: var(--texto); border: 1px solid var(--borda);
+           border-radius: 12px; padding: 0; width: min(1240px, 96vw); max-height: 94vh; }
+  dialog::backdrop { background: rgba(5, 7, 10, .75); }
+  .dialogo { display: flex; flex-direction: column; max-height: 94vh; }
+  .dialogo-topo { display: flex; justify-content: space-between; align-items: center;
+                  gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--borda); }
+  .dialogo-topo h2 { margin: 0; }
+  .dg-cabeca { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .dialogo-corpo.coluna { grid-template-columns: minmax(0, 1fr); }
+  /* Gráfico expandido: mais alto, e cada coluna é um botão. */
+  .dialogo .colunas { height: 260px; }
+  .colunas > div[role="button"] { cursor: pointer; }
+  .colunas > div[aria-pressed="true"] { background: var(--painel-alto);
+                                        box-shadow: inset 0 0 0 1px var(--lb-azul); }
+  .colunas > div[aria-pressed="true"] .torre { background: var(--acento); }
+  /* A lista completa rola dentro do diálogo; cada linha é um botão. */
+  .lista-completa { max-height: 38vh; overflow-y: auto; }
+  .lista-completa .pais-linha { grid-template-columns: 1.6rem minmax(0, 1fr) minmax(4rem, 30%) 6rem; }
+  /* No celular o diálogo ocupa a tela toda. */
+  @media (max-width: 560px) {
+    dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh;
+             border-radius: 0; border: 0; }
+    .dialogo { height: 100%; max-height: 100dvh; }
+  }
+  .dialogo-corpo { display: grid; gap: 16px; padding: 16px; overflow: auto;
+                   grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
+  @media (max-width: 860px) { .dialogo-corpo { grid-template-columns: minmax(0, 1fr); } }
+  .mapa-zoom { touch-action: none; cursor: grab; user-select: none; }
+  .mapa-zoom.arrastando { cursor: grabbing; }
+  .mapa-zoom svg { width: 100%; height: auto; }
+  /* Contornos com espessura de tela, não do mapa: com o zoom, a borda de 0,6
+     engordaria junto com o desenho. */
+  .mapa-zoom path { vector-effect: non-scaling-stroke; stroke-width: .8px; }
+  .mapa-zoom path:hover { stroke-width: 1.6px; }
+  .zoom-botoes { display: flex; gap: 6px; margin-bottom: 10px; }
+  .zoom-botoes .btn { min-width: 2.4rem; }
+  .cinema h3 { margin: 0; font-size: 1.05rem; }
+  @media (min-width: 861px) { .cinema { position: sticky; top: 0; } }
+  .paises-lista { display: grid; gap: 2px; }
+  .pais-linha { display: grid; align-items: center; gap: 8px; width: 100%;
+                grid-template-columns: 1.4rem minmax(0, 1fr) 2.6rem 5rem;
+                padding: 6px 8px; border: 0; border-radius: 6px; background: none;
+                color: inherit; font: inherit; text-align: left; cursor: pointer;
+                transition: background .15s; }
+  .pais-linha:hover { background: var(--painel-alto); }
+  .pais-linha:hover .barra { height: 8px; }
+  .pais-linha:focus-visible { outline: 1px solid var(--acento); outline-offset: -2px; }
+  .pais-linha[aria-pressed="true"] { background: var(--painel-alto);
+                                     box-shadow: inset 2px 0 0 var(--lb-azul); }
+  .pais-linha .iso { font-family: var(--mono); font-size: .72rem; color: var(--suave);
+                     text-align: right; }
+  .pais-linha .nome { font-size: .92rem; }
+  .pais-linha .qtd { font-family: var(--mono); font-size: .78rem; color: var(--suave);
+                     text-align: right; white-space: nowrap; }
+  /* País escolhido: contorno azul por cima dos vizinhos (o script o move para o
+     fim do SVG) e com espessura de tela, como os demais. */
+  .mapa-zoom path.selecionado { stroke: var(--lb-azul); stroke-width: 2px; }
+  .pais-filmes { margin-top: 14px; }
+  .pais-cabeca { display: flex; justify-content: space-between; align-items: center;
+                 gap: 12px; margin-bottom: 10px; }
+  .pais-cabeca h3 { margin: 0; font-size: 1rem; }
+  .pais-cabeca h3:focus-visible { outline: 1px solid var(--acento); outline-offset: 4px; }
+  .cinema-destaque { margin: 14px 0; padding: 14px; border-radius: 10px;
+                     background: var(--painel-alto); border: 1px solid var(--borda);
+                     display: grid; gap: 12px; }
+  .cinema-destaque .valor { display: block; font-size: 1.15rem; font-weight: 700;
+                            margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .cinema-destaque .valor.acento { color: var(--acento); }
+
+  /* ---- caixinhas de número, popular ou garimpo, duração ---- */
+  .mini-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 10px; margin-bottom: 14px; }
+  .mini-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0;
+               padding: 12px 14px; border-radius: 10px;
+               background: var(--painel-alto); border: 1px solid var(--borda); }
+  .mini-stat .valor { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .mini-stat .valor.grande { font-size: 1.9rem; line-height: 1.15; }
+  .mini-stat .valor.pequeno { font-size: .92rem; }
+  /* Caixinhas centralizadas (rótulo, valor e legenda), como as de gêneros e idiomas. */
+  .mini-stats.centro .mini-stat { align-items: center; text-align: center; }
+  .mini-stat .valor a { color: var(--texto); }
+  .mini-stat .valor a:hover, .mini-stat .valor a:focus-visible {
+    color: var(--acento); text-decoration: none; }
+  .fama-topo { display: flex; align-items: center; gap: 16px; }
+  .fama-topo .numero { margin: 0; }
+  .fama-trilha { position: relative; height: 8px; margin-top: 14px; border-radius: 99px;
+                 background: linear-gradient(90deg, var(--trilho), var(--acento)); }
+  .fama-marcador { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%;
+                   transform: translate(-50%, -50%); background: var(--texto);
+                   border: 2px solid var(--fundo); }
+  .fama-extremos { display: flex; justify-content: space-between; margin-top: 6px;
+                   font-family: var(--mono); font-size: .66rem; color: var(--suave);
+                   text-transform: uppercase; letter-spacing: .1em; }
+
+  /* ---- revisitas ---- */
+  /* O filme e o diretor mais revistos lado a lado no desktop, empilhados no celular. */
+  .rev-destaques { display: grid; gap: 20px 24px;
+                   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .rev-destaque { display: flex; gap: 16px; min-width: 0; }
+  .rev-foto { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; flex: none;
+              background: var(--trilho); }
+  .rev-titulos { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 2px;
+                 font-size: .84rem; }
+  .rev-titulos a { color: var(--texto); }
+  .rev-titulos a:hover, .rev-titulos a:focus-visible { color: var(--acento); text-decoration: none; }
+  .rev-poster { position: relative; display: block; flex: none; aspect-ratio: 2 / 3;
+                border-radius: 6px; overflow: hidden; background: var(--trilho); }
+  .rev-poster img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .rev-destaque .rev-poster { width: 96px; align-self: flex-start; }
+  .rev-info { min-width: 0; flex: 1; }
+  .rev-titulo { font-size: 1.15rem; font-weight: 700; margin: 2px 0; }
+  .rev-titulo a, .rev-item .titulo a { color: var(--texto); }
+  .rev-titulo a:hover, .rev-titulo a:focus-visible,
+  .rev-item .titulo a:hover, .rev-item .titulo a:focus-visible { color: var(--acento); text-decoration: none; }
+  .rev-media { margin-top: 6px; font-family: var(--mono); font-size: .86rem; }
+  .linha-do-tempo { list-style: none; margin: 12px 0 0; padding: 0; display: flex;
+                    flex-wrap: wrap; gap: 6px; }
+  .linha-do-tempo li { display: flex; flex-direction: column; gap: 1px; padding: 6px 10px;
+                       border-radius: 8px; background: var(--painel-alto);
+                       border: 1px solid var(--borda); }
+  .rev-nota { font-family: var(--mono); font-size: .86rem; font-weight: 700; }
+  .rev-barra { display: flex; height: 10px; border-radius: 99px; overflow: hidden;
+               background: var(--trilho); }
+  .rev-legenda { list-style: none; margin: 8px 0 0; padding: 0; display: flex;
+                 flex-wrap: wrap; gap: 4px 16px; font-size: .84rem; color: var(--suave); }
+  .rev-legenda i { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                   margin-right: 6px; }
+  .rev-legenda b { color: var(--texto); font-family: var(--mono); font-weight: 600; }
+  .rev-grade { display: grid; gap: 12px 10px;
+               grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+  .rev-grade[hidden] { display: none; }
+  .rev-mais { margin-top: 12px; }
+  .rev-item .titulo { margin-top: 4px; font-size: .78rem; font-weight: 600; }
+  .rev-x { position: absolute; right: 4px; bottom: 4px; padding: 1px 6px; border-radius: 99px;
+           font-family: var(--mono); font-size: .68rem; font-weight: 700;
+           background: rgba(13, 17, 23, .85); color: var(--texto); }
+  @media (max-width: 560px) {
+    .rev-destaque .rev-poster { width: 76px; }
+    .rev-foto { width: 76px; height: 76px; }
+    .rev-grade { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+
+  /* ---- recomendações ---- */
+  .rec { display: flex; gap: 12px; padding: 12px;
+         transition: background .2s, border-color .2s, transform .2s; }
+  .rec:hover { background: var(--painel-alto); border-color: var(--trilho);
+               transform: translateY(-2px); }
+  /* Proporção fixa de pôster: sem ela a imagem esticava até a altura do
+     cartão e saía espremida. */
+  .rec .poster, .filme .poster {
+    width: 56px; aspect-ratio: 2 / 3; flex: none; align-self: flex-start;
+    border-radius: 5px; overflow: hidden; background: var(--trilho); }
+  .rec .poster img, .filme .poster img {
+    display: block; width: 100%; height: 100%; object-fit: cover;
+    transition: transform .3s; }
+  .rec:hover .poster img, .filme:hover .poster img { transform: scale(1.06); }
+  .rec .titulo { color: var(--texto); font-weight: 600; transition: color .15s; }
+  .rec .titulo:hover, .rec .titulo:focus-visible { color: var(--acento); text-decoration: none; }
+
+  /* ---- cartões de filmes (visão geral) ---- */
+  .filme { display: flex; align-items: center; gap: 12px; padding: 8px;
+           margin: 0 -8px; border-radius: 8px; transition: background .15s; }
+  .filme:hover { background: var(--painel-alto); }
+  .filme .poster { width: 40px; align-self: center; }
+  .filme .corpo { min-width: 0; flex: 1; }
+  .filme .titulo { font-size: .92rem; font-weight: 600; }
+  .filme .titulo a { color: var(--texto); transition: color .15s; }
+  .filme .titulo a:hover, .filme .titulo a:focus-visible {
+    color: var(--acento); text-decoration: none; }
+  .chips { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .chip { font-family: var(--mono); font-size: .64rem; padding: 1px 7px;
+          border-radius: 99px; background: var(--trilho); color: var(--suave); }
+  .selo-nota { flex: none; text-align: right; }
+  /* "Onde você discorda": sua nota, a média do TMDB e a diferença, em linha. */
+  .selo-nota.comparacao { display: flex; align-items: center; gap: 10px; }
+  .comparacao .tmdb { font-family: var(--mono); font-size: .74rem; color: var(--suave); }
+  .comparacao .diferenca { min-width: 2.6rem; font-family: var(--mono); font-size: .86rem;
+                           font-weight: 700; text-align: right; }
+  .badge { font-family: var(--mono); font-size: .82rem; padding: 3px 9px;
+           border-radius: 99px; background: color-mix(in srgb, var(--lb-verde) 14%, transparent); color: var(--texto);
+           white-space: nowrap; }
+
+  .colunas .eixo { font-family: var(--mono); font-size: .66rem; color: var(--suave); }
+
+  /* ---- pessoas ---- */
+  .retrato { width: 38px; height: 38px; border-radius: 50%; object-fit: cover;
+             background: var(--trilho); flex: none; }
+  .posicao { width: 20px; height: 20px; border-radius: 50%; flex: none;
+             background: var(--acento); color: #0d1117; font-family: var(--mono);
+             font-size: .66rem; font-weight: 700;
+             display: flex; align-items: center; justify-content: center; }
+  .amostra.sob { display: block; }
+
+
+  /* Filmes de uma pessoa: cartões pequenos, reaproveitando a linha `.filme` e o
+     pôster 2:3 dela. A margem negativa da linha é para a lista dentro do
+     painel; aqui cada cartão tem borda própria. */
+  .filmes-pessoa { display: grid; gap: 8px;
+                   grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .filmes-pessoa .filme { margin: 0; min-width: 0; border: 1px solid var(--borda);
+                          background: var(--fundo); transition: background .15s, border-color .15s; }
+  .filmes-pessoa .filme:hover { background: var(--painel-alto); border-color: var(--trilho); }
+  @media (max-width: 720px) { .filmes-pessoa { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* `minmax(0, 1fr)`, não `1fr`: o `1fr` puro tem mínimo igual ao conteúdo, e o
+     título (que não quebra linha) alargava a coluna para além do cartão. */
+  @media (max-width: 480px) { .filmes-pessoa { grid-template-columns: minmax(0, 1fr); } }
+
+  /* Ranking expansível. <details>/<summary> dão teclado e leitor de tela de
+     graça; o resto é aparência. */
+  .ranking-pessoas { padding: 6px; }
+  .ranking-pessoas .cabeca-secao { padding: 8px 8px 0; margin-bottom: 8px; }
+  .pessoa-linha { border-radius: 8px; transition: background .15s; }
+  .pessoa-linha:hover, .pessoa-linha[open] { background: var(--painel-alto); }
+  .pessoa-linha summary {
+    display: grid; align-items: center; gap: 10px 12px; padding: 10px;
+    grid-template-areas: "pos foto nome numeros seta";
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    cursor: pointer; list-style: none; border-radius: 8px; }
+  .pessoa-linha summary::-webkit-details-marker { display: none; }
+  .pessoa-linha summary:focus-visible { outline: 1px solid var(--acento); outline-offset: -2px; }
+  .pessoa-linha .posicao { grid-area: pos; }
+  .pessoa-linha .retrato { grid-area: foto; }
+  .pessoa-linha .nome { grid-area: nome; font-size: .95rem; }
+  .pessoa-linha .seta { grid-area: seta; color: var(--suave);
+                        transition: transform .2s, color .15s; }
+  .pessoa-linha summary:hover .seta { color: var(--acento); }
+  .pessoa-linha[open] .seta { transform: rotate(180deg); }
+  /* Três números rotulados: o rótulo na caixa-alta monoespaçada do app, o valor
+     maior. Colunas de largura fixa alinham as linhas entre si. */
+  .pessoa-linha .numeros { grid-area: numeros; display: grid; gap: 4px 20px;
+                           grid-template-columns: 3.4rem 6.2rem 6.2rem; }
+  .pessoa-linha .stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .pessoa-linha .stat .valor { font-size: 1.05rem; font-weight: 700; line-height: 1.25;
+                               font-variant-numeric: tabular-nums; }
+  .pessoa-linha .stat .amostra { font-weight: 400; }
+  .pessoa-linha .abre { padding: 4px 10px 12px; animation: abrir .25s ease-out; }
+  @keyframes abrir { from { opacity: 0; transform: translateY(-6px); } }
+  /* No celular os números descem para uma linha própria, sob o nome. */
+  @media (max-width: 560px) {
+    .pessoa-linha summary { grid-template-areas: "pos foto nome seta" "numeros numeros numeros numeros";
+                            grid-template-columns: auto auto minmax(0, 1fr) auto; }
+    .pessoa-linha .numeros { grid-template-columns: repeat(3, auto); justify-content: space-between; }
+  }
+  .ver-mais { display: block; width: 100%; padding: 10px; border: 0;
+              background: none; cursor: pointer; text-align: center;
+              border-radius: 8px; color: var(--suave);
+              font-family: var(--mono); font-size: .74rem;
+              text-transform: uppercase; letter-spacing: .1em;
+              transition: color .15s, background .15s; }
+  .ver-mais:hover { color: var(--texto); background: var(--painel-alto); }
+  .ver-mais:focus-visible { outline: 1px solid var(--acento); outline-offset: -2px; }
+  .ver-mais .aberto, .ver-mais[aria-expanded="true"] .fechado { display: none; }
+  .ver-mais[aria-expanded="true"] .aberto { display: inline; }
+
+  /* Pizza de gênero: o destaque de uma fatia escurece as outras, tanto no
+     hover da fatia quanto no da linha da legenda. Uma regra por fatia porque
+     CSS não itera. */
+  .pizza { display: flex; align-items: center; justify-content: center;
+           gap: 24px; flex-wrap: wrap; }
+  .pizza svg { width: 170px; flex: none; }
+  .pizza .fatia { transition: opacity .2s; }
+  .pizza:has([data-i="0"]:hover) .fatia:not([data-i="0"]),
+  .pizza:has([data-i="1"]:hover) .fatia:not([data-i="1"]),
+  .pizza:has([data-i="2"]:hover) .fatia:not([data-i="2"]),
+  .pizza:has([data-i="3"]:hover) .fatia:not([data-i="3"]) { opacity: .25; }
+  .legenda-pizza { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 150px; }
+  .legenda-pizza li { display: flex; align-items: center; gap: 10px;
+                      padding: 6px 8px; border-radius: 6px; font-size: .9rem;
+                      transition: background .15s; }
+  .legenda-pizza li:hover { background: var(--painel-alto); }
+  .legenda-pizza i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .legenda-pizza .nome { flex: 1; }
+  .legenda-pizza .qtd { font-family: var(--mono); font-size: .78rem; color: var(--suave);
+                       white-space: nowrap; }
+
+  /* ---- diversos ---- */
+  form { display: grid; gap: 12px; }
+  input[type=text], input[type=file] {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--borda); background: var(--fundo); color: var(--texto);
+    font-size: .95rem; font-family: inherit;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--acento); }
+  button.acao { padding: 11px 20px; border: 0; border-radius: 8px;
+                background: var(--acento); color: #0d1117; font-weight: 700;
+                font-size: .95rem; cursor: pointer; font-family: inherit; }
+  button.acao:hover { filter: brightness(1.1); }
+  .aviso { border-left: 2px solid var(--acento); padding: 12px 14px;
+           background: var(--painel); color: var(--suave); font-size: .86rem;
+           border-radius: 0 8px 8px 0; }
+  .passos { font-size: .86rem; color: var(--suave); }
+  .passos summary { color: var(--link); cursor: pointer; width: fit-content;
+                    padding: 6px 0; }
+  .passos summary:focus-visible { outline: 1px solid var(--acento); outline-offset: 2px; }
+  .passos ol { margin: 8px 0 0; padding-left: 1.4rem; display: grid; gap: 4px; }
+  .passos code { color: var(--texto); }
+  .nota-rodape { color: var(--suave); font-size: .78rem; margin-top: 28px; }
+
+  /* Celular: rótulos e eixos em mono ficam pequenos demais a ~11 px. As colunas
+     dos gráficos acompanham (`--ch`), para o rótulo continuar cabendo. */
+  @media (max-width: 560px) {
+    .rotulo, .amostra, .posicao, .colunas .eixo { font-size: .72rem; }
+    .colunas { --ch: .44rem; }
+    .abas button { padding: 10px 10px; }
+    .mapa-legenda .amostra { flex-basis: 100%; }
+    /* Lista do diálogo: o nome primeiro e com folga (a barra desce para a linha de
+       baixo), senão sobravam 4 letras para ele ao lado da barra e da contagem. */
+    .lista-completa .pais-linha { grid-template-columns: 1.4rem minmax(0, 1fr) auto;
+                                  grid-template-areas: "pos nome qtd" ". barra barra"; }
+    .lista-completa .pais-linha .iso { grid-area: pos; }
+    .lista-completa .pais-linha .nome { grid-area: nome; }
+    .lista-completa .pais-linha .barra { grid-area: barra; }
+    .lista-completa .pais-linha .qtd { grid-area: qtd; }
+    .mapa-legenda .amostra::before { content: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+{# Ícones do app: linhas de 24x24, desenhados à mão (sem biblioteca, sem
+   requisição externa). Cada um é definido aqui uma vez e usado por
+   `<svg class="icone"><use href="#i-nome"/></svg>`; traço e cor vêm do CSS
+   (`.icone`, stroke currentColor). #}
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-barras" viewBox="0 0 24 24"><path d="M4 20h16M7 20v-7M12 20V5M17 20V10"/></symbol>
+  <symbol id="i-calendario" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-relogio" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-estrela" viewBox="0 0 24 24"><path d="M12 3l2.8 5.9 6.2.8-4.6 4.3 1.2 6.4L12 17.3 6.4 20.4l1.2-6.4L3 9.7l6.2-.8z"/></symbol>
+  <symbol id="i-olho" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-globo" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+  <symbol id="i-etiqueta" viewBox="0 0 24 24"><path d="M3 3h8l10 10-8 8L3 11z"/><circle cx="7.5" cy="7.5" r="1.5"/></symbol>
+  <symbol id="i-balao" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.5A8 8 0 1 1 21 12z"/></symbol>
+  <symbol id="i-bussola" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></symbol>
+  <symbol id="i-hashtag" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16"/></symbol>
+  <symbol id="i-setas" viewBox="0 0 24 24"><path d="M4 8h16M16 4l4 4-4 4M20 16H4M8 12l-4 4 4 4"/></symbol>
+  <symbol id="i-usuario" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-pizza" viewBox="0 0 24 24"><path d="M11 4A9 9 0 1 0 20 13H11z"/><path d="M13 2A9 9 0 0 1 22 11H13z"/></symbol>
+  <symbol id="i-repetir" viewBox="0 0 24 24"><path d="M4 11V9a3 3 0 0 1 3-3h13M17 3l3 3-3 3M20 13v2a3 3 0 0 1-3 3H4M7 15l-3 3 3 3"/></symbol>
+  <symbol id="i-expandir" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+  <symbol id="i-compartilhar" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></symbol>
+  <symbol id="i-pino" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+</svg>
+<header class="topo">
+  <div class="envelope">
+    <a class="marca" href="/"><i class="disco"></i>letterboxd <span>stats</span></a>
+    {% block abas %}{% endblock %}
+  </div>
+</header>
+<main class="envelope">{% block conteudo %}{% endblock %}</main>
+</body>
+</html>
